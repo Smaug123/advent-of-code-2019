@@ -30,21 +30,21 @@ jobs:
 
       - name: Build
         run: |
-          readarray -d '' crates < <(find . -maxdepth 2 -type f -name Cargo.toml -print0)
+          readarray -d '' crates < <(find . -mindepth 2 -maxdepth 2 -type f -name Cargo.toml -print0)
           for crate in "${crates[@]}"; do
             nix build ".#$(basename "$(dirname "$crate")")"
           done
 
       - name: Clippy
         run: |
-          readarray -d '' crates < <(find . -maxdepth 2 -type f -name Cargo.toml -print0)
+          readarray -d '' crates < <(find . -mindepth 2 -maxdepth 2 -type f -name Cargo.toml -print0)
           for crate in "${crates[@]}"; do
             nix build ".#clippy_$(basename "$(dirname "$crate")")"
           done
 
       - name: Test
         run: |
-          readarray -d '' crates < <(find . -maxdepth 2 -type f -name Cargo.toml -print0)
+          readarray -d '' crates < <(find . -mindepth 2 -maxdepth 2 -type f -name Cargo.toml -print0)
           for crate in "${crates[@]}"; do
             name=".#test_$(basename "$(dirname "$crate")")"
             exit_code=$(nix build "$name")
