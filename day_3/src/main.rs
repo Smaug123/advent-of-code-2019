@@ -11,9 +11,9 @@ fn main() -> Result<(), String> {
         Ok(s) => s,
         Err(e) => return Err(format!("Error while accessing path {path} : {e}")),
     };
-    let input = day_3::input(&input_str);
+    let (wire1, wire2) = day_3::input(&input_str);
 
-    println!("part 1 => {}", day_3::part_1(&input));
-    println!("part 2 => {}", day_3::part_2(&input));
+    println!("part 1 => {}", day_3::part_1(&wire1, &wire2));
+    println!("part 2 => {}", day_3::part_2(&wire1, &wire2));
     Ok(())
 }
