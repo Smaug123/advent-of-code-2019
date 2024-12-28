@@ -29,30 +29,27 @@ jobs:
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
 
       - name: Build
-        run: |
-          readarray -d '' crates < <(find . -mindepth 2 -maxdepth 2 -type f -name Cargo.toml -print0)
-          for crate in "${crates[@]}"; do
-            nix build ".#$(basename "$(dirname "$crate")")"
-          done
+        run: bash ./.github/workflows/build.sh
 
       - name: Clippy
-        run: |
-          readarray -d '' crates < <(find . -mindepth 2 -maxdepth 2 -type f -name Cargo.toml -print0)
-          for crate in "${crates[@]}"; do
-            nix build ".#clippy_$(basename "$(dirname "$crate")")"
-          done
+        run: bash ./.github/workflows/clippy.sh
 
       - name: Test
-        run: |
-          readarray -d '' crates < <(find . -mindepth 2 -maxdepth 2 -type f -name Cargo.toml -print0)
-          for crate in "${crates[@]}"; do
-            name=".#test_$(basename "$(dirname "$crate")")"
-            exit_code=$(nix build "$name")
-            if [ "$exit_code" -ne 0 ]; then
-              nix log "$name"
-              exit "$exit_code"
-            fi
-          done
+        run: bash ./.github/workflows/run_tests.sh
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v30
+        with:
+          extra_nix_config: |
+            access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
+      - name: Run shellcheck
+        run: nix develop --command bash -c "find . -type f -name '*.sh' | xargs shellcheck"
 
   format:
     runs-on: ubuntu-latest
@@ -72,7 +69,7 @@ jobs:
         run: nix develop --command cargo fmt --check
 
   all-required-checks-complete:
-    needs: [format, tests]
+    needs: [format, tests, shellcheck]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
