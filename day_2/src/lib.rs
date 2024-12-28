@@ -34,27 +34,15 @@ pub mod day_2 {
                 (0..=99)
                     .filter_map(|verb| {
                         machine.reset_memory(numbers.clone());
-                        match machine.set_mem_elt(1, noun) {
-                            Err(_) => None,
-                            Ok(()) => {
-                                match machine.set_mem_elt(2, verb) {
-                                    Err(_) => None,
-                                    Ok(()) => {
-                                        match machine.execute_to_end() {
-                                            Err(_) => None,
-                                            Ok(()) => {
-                                                // safety: on termination, program counter is on opcode 99,
-                                                // so there is an element in the array
-                                                if *machine.read_mem_elt(0).unwrap() == target {
-                                                    Some((noun, verb))
-                                                } else {
-                                                    None
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                        machine.set_mem_elt(1, noun).ok()?;
+                        machine.set_mem_elt(2, verb).ok()?;
+                        machine.execute_to_end().ok()?;
+                        // safety: on termination, program counter is on opcode 99,
+                        // so there is an element in the array
+                        if *machine.read_mem_elt(0).unwrap() == target {
+                            Some((noun, verb))
+                        } else {
+                            None
                         }
                     })
                     .next()
