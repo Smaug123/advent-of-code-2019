@@ -59,7 +59,11 @@
           crates);
         tests = builtins.listToAttrs (map (crates: {
             name = "test_${crates}";
-            value = pkgs.rustBuilder.runTests rustPkgs.workspace."${crates}" {};
+            value = pkgs.rustBuilder.runTests rustPkgs.workspace."${crates}" {
+              testCommand = bin: ''
+                INSTA_UPDATE=no INSTA_WORKSPACE_ROOT="${self}" "${bin}"
+              '';
+            };
           })
           crates);
         clippy_days = builtins.listToAttrs (map (crates: {
@@ -74,6 +78,7 @@
             packages = [
               pkgs.alejandra
               pkgs.cargo
+              pkgs.cargo-insta
             ];
           };
         };

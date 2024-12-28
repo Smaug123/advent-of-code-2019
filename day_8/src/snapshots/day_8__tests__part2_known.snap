@@ -1,0 +1,6 @@
+---
+source: day_8/src/lib.rs
+expression: part_2(&input)
+---
+.X
+X.
