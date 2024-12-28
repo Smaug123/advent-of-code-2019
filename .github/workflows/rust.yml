@@ -30,21 +30,21 @@ jobs:
 
       - name: Build
         run: |
-          readarray -d '' crates < <(find . -maxdepth 1 -type d -print0 | grep -v '.' | grep -v 'intcode')
+          readarray -d '' crates < <(find . -maxdepth 1 -type d -print0 | grep -v '.github' | grep -v 'intcode')
           for crate in "${crates[@]}"; do
             nix build ".#$crate"
           done
 
       - name: Clippy
         run: |
-          readarray -d '' crates < <(find . -maxdepth 1 -type d -print0 | grep -v '.')
+          readarray -d '' crates < <(find . -maxdepth 1 -type d -print0 | grep -v '.github')
           for crate in "${crates[@]}"; do
             nix build ".#clippy_$crate"
           done
 
       - name: Test
         run: |
-          readarray -d '' crates < <(find . -maxdepth 1 -type d -print0 | grep -v '.')
+          readarray -d '' crates < <(find . -maxdepth 1 -type d -print0 | grep -v '.github')
           for crate in "${crates[@]}"; do
             exit_code=$(nix build ".#test_$crate")
             if [ "$exit_code" -ne 0 ]; then
