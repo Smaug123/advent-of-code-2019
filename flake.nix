@@ -21,9 +21,11 @@
           overlays = [cargo2nix.overlays.default];
         };
 
+        day_names = builtins.attrNames (builtins.readDir self);
+
         rustConfig = {
           rustVersion = "1.83.0";
-          rootFeatures = ["day_1/no_real_inputs"];
+          rootFeatures = map (x: "${x}/no_real_inputs") day_names;
           packageFun = import ./Cargo.nix;
           extraRustComponents = ["clippy"];
         };
@@ -48,7 +50,6 @@
               ];
           }
           // rustConfig);
-        day_names = builtins.attrNames (builtins.readDir self);
         days = builtins.listToAttrs (map (day_name: {
             name = day_name;
             value = rustPkgs.workspace."${day_name}" {};
