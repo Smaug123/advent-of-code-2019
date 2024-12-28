@@ -1,14 +1,14 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use day_1::day_1::{input, part_1, part_2};
+use day_6::day_6::{input, part_1, part_2};
 
 fn criterion_benchmark(c: &mut Criterion) {
     let input = input(include_str!("../input.txt"));
-    c.bench_function("day 1 part 1", |b| {
+    c.bench_function("day 6 part 1", |b| {
         b.iter(|| {
-            black_box(part_1(&input.iter().copied()));
+            black_box(part_1(&input));
         })
     });
-    c.bench_function("day 1 part 2", |b| {
+    c.bench_function("day 6 part 2", |b| {
         b.iter(|| {
             black_box(part_2(&input));
         })

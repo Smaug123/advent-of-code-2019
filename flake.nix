@@ -34,8 +34,8 @@
         clippyPkgs = pkgs.rustBuilder.makePackageSet ({
             packageOverrides = pkgs:
               pkgs.rustBuilder.overrides.all
-              ++ map (crate: 
-                (pkgs.rustBuilder.rustLib.makeOverride {
+              ++ map (
+                crate: (pkgs.rustBuilder.rustLib.makeOverride {
                   name = crate;
                   overrideAttrs = drv: {
                     setBuildEnv = ''
@@ -48,7 +48,8 @@
                     '';
                   };
                 })
-              ) crates;
+              )
+              crates;
           }
           // rustConfig);
         days = builtins.listToAttrs (map (crates: {
