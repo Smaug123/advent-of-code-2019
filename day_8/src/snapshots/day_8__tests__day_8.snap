@@ -1,0 +1,10 @@
+---
+source: day_8/src/lib.rs
+expression: part_2(&input)
+---
+X..X.XXXX..XX..XXXX.X..X.
+X..X....X.X..X....X.X..X.
+XXXX...X..X......X..X..X.
+X..X..X...X.....X...X..X.
+X..X.X....X..X.X....X..X.
+X..X.XXXX..XX..XXXX..XX..
