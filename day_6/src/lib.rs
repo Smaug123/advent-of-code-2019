@@ -106,9 +106,65 @@ pub mod day_6 {
         })
     }
 
+    #[derive(Copy, Clone, Debug)]
+    enum CataState<'a> {
+        NotFound,
+        FoundOne(&'a str, u32),
+        Answer(u32),
+    }
+
     pub fn part_2(input: &[Edge<&str>]) -> u32 {
-        let dag = Tree::make(input);
-        0
+        let dag = Tree::make(input).unwrap();
+        let x = dag.cata(&mut |depth, label, children| {
+            let rendered_child_state =
+                children
+                    .iter()
+                    .fold(CataState::NotFound, |acc, child| match (acc, child) {
+                        (CataState::Answer(ans), _) => CataState::Answer(ans),
+                        (_, CataState::Answer(ans)) => CataState::Answer(*ans),
+                        (CataState::NotFound, a) => *a,
+                        (a, CataState::NotFound) => a,
+                        (
+                            CataState::FoundOne(_label, child_depth),
+                            CataState::FoundOne(_label2, child_depth2),
+                        ) =>
+                        // Subtract 2 because getting from "us" to "our parent" is not a hop,
+                        // and similarly from "target's parent" to "target"
+                        {
+                            CataState::Answer((child_depth - depth) + (child_depth2 - depth) - 2)
+                        }
+                    });
+            match rendered_child_state {
+                CataState::Answer(a) => CataState::Answer(a),
+                CataState::NotFound => {
+                    if *label == "SAN" || *label == "YOU" {
+                        CataState::FoundOne(label, depth)
+                    } else {
+                        CataState::NotFound
+                    }
+                }
+                CataState::FoundOne(found_label, found_depth) => {
+                    if *label == "SAN" {
+                        assert!(found_label != "SAN");
+                        CataState::Answer(found_depth - depth - 1)
+                    } else if *label == "YOU" {
+                        assert!(found_label != "YOU");
+                        return CataState::Answer(found_depth - depth - 1);
+                    } else {
+                        return CataState::FoundOne(found_label, found_depth);
+                    }
+                }
+            }
+        });
+        match x {
+            CataState::NotFound => {
+                panic!("Expected to find both nodes");
+            }
+            CataState::FoundOne(found, _) => {
+                panic!("Found only {found}, expected to find both");
+            }
+            CataState::Answer(a) => a,
+        }
     }
 }
 
@@ -159,6 +215,6 @@ I)SAN",
     fn test_day_6() {
         let input = input(include_str!("../input.txt"));
         assert_eq!(part_1(&input), 249308);
-        //assert_eq!(part_2(&input), 349);
+        assert_eq!(part_2(&input), 349);
     }
 }
