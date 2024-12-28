@@ -87,11 +87,11 @@ pub mod day_8 {
 
         for layer in input {
             for col in 0..COLS {
-                for row in 0..ROWS {
-                    match result[row][col] {
+                for (row_index, result_row) in result.iter_mut().enumerate() {
+                    match result_row[col] {
                         0 => {}
                         1 => {}
-                        2 => result[row][col] = layer.elts[row][col],
+                        2 => result_row[col] = layer.elts[row_index][col],
                         _ => {
                             panic!("logic error");
                         }
