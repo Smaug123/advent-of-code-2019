@@ -1,5 +1,5 @@
 pub mod day_3 {
-    use std::{collections::HashMap, u32};
+    use std::collections::HashMap;
 
     #[derive(Debug)]
     pub enum Direction {

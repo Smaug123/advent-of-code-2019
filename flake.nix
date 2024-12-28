@@ -21,11 +21,11 @@
           overlays = [cargo2nix.overlays.default];
         };
 
-        day_names = builtins.attrNames (builtins.readDir self);
+        crates = builtins.attrNames (builtins.readDir self);
 
         rustConfig = {
           rustVersion = "1.83.0";
-          rootFeatures = map (x: "${x}/no_real_inputs") day_names;
+          rootFeatures = map (x: "${x}/no_real_inputs") crates;
           packageFun = import ./Cargo.nix;
           extraRustComponents = ["clippy"];
         };
@@ -34,37 +34,38 @@
         clippyPkgs = pkgs.rustBuilder.makePackageSet ({
             packageOverrides = pkgs:
               pkgs.rustBuilder.overrides.all
-              ++ [
+              ++ map (crate: 
                 (pkgs.rustBuilder.rustLib.makeOverride {
-                  name = "all_days";
+                  name = crate;
                   overrideAttrs = drv: {
                     setBuildEnv = ''
                       ${drv.setBuildEnv or ""}
                       echo
-                      echo --- BUILDING WITH CLIPPY ---
+                      echo --- BUILDING WITH CLIPPY "''${CLIPPY_DRIVER}" ---
                       echo
                       export RUSTC="''${CLIPPY_DRIVER}"
+                      export RUSTFLAGS="-Dwarnings"
                     '';
                   };
                 })
-              ];
+              ) crates;
           }
           // rustConfig);
-        days = builtins.listToAttrs (map (day_name: {
-            name = day_name;
-            value = rustPkgs.workspace."${day_name}" {};
+        days = builtins.listToAttrs (map (crates: {
+            name = crates;
+            value = rustPkgs.workspace."${crates}" {};
           })
-          day_names);
-        tests = builtins.listToAttrs (map (day_name: {
-            name = "test_${day_name}";
-            value = pkgs.rustBuilder.runTests rustPkgs.workspace."${day_name}" {};
+          crates);
+        tests = builtins.listToAttrs (map (crates: {
+            name = "test_${crates}";
+            value = pkgs.rustBuilder.runTests rustPkgs.workspace."${crates}" {};
           })
-          day_names);
-        clippy_days = builtins.listToAttrs (map (day_name: {
-            name = "clippy_${day_name}";
-            value = clippyPkgs.workspace."${day_name}" {};
+          crates);
+        clippy_days = builtins.listToAttrs (map (crates: {
+            name = "clippy_${crates}";
+            value = clippyPkgs.workspace."${crates}" {};
           })
-          day_names);
+          crates);
       in {
         packages = days // clippy_days // tests;
         devShells = {
