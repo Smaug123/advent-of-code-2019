@@ -30,25 +30,26 @@ jobs:
 
       - name: Build
         run: |
-          readarray -d '' crates < <(find . -maxdepth 1 -type d -print0 | grep -v '.github' | grep -v 'intcode')
+          readarray -d '' crates < <(find . -maxdepth 2 -type f -name Cargo.toml -print0)
           for crate in "${crates[@]}"; do
-            nix build ".#$crate"
+            nix build ".#$(basename "$(dirname "$crate")")"
           done
 
       - name: Clippy
         run: |
-          readarray -d '' crates < <(find . -maxdepth 1 -type d -print0 | grep -v '.github')
+          readarray -d '' crates < <(find . -maxdepth 2 -type f -name Cargo.toml -print0)
           for crate in "${crates[@]}"; do
-            nix build ".#clippy_$crate"
+            nix build ".#clippy_$(basename "$(dirname "$crate")")"
           done
 
       - name: Test
         run: |
-          readarray -d '' crates < <(find . -maxdepth 1 -type d -print0 | grep -v '.github')
+          readarray -d '' crates < <(find . -maxdepth 2 -type f -name Cargo.toml -print0)
           for crate in "${crates[@]}"; do
-            exit_code=$(nix build ".#test_$crate")
+            name=".#test_$(basename "$(dirname "$crate")")"
+            exit_code=$(nix build "$name")
             if [ "$exit_code" -ne 0 ]; then
-              nix log ".#test_$crate"
+              nix log "$name"
               exit "$exit_code"
             fi
           done
