@@ -10,6 +10,7 @@ args @ {
     "day_4/default"
     "day_5/default"
     "day_6/default"
+    "day_7/default"
     "day_8/default"
   ],
   rustPackages,
@@ -29,7 +30,7 @@ args @ {
   workspaceSrc,
   ignoreLockHash,
 }: let
-  nixifiedLockHash = "308010969609324bcc6a2432383d4848aa6c7148b3e458b05bc9706cb157d427";
+  nixifiedLockHash = "7df589d8339408dc9ea0f0602db747e61edb272955a74955f7d7eeaca2d60b18";
   workspaceSrc =
     if args.workspaceSrc == null
     then ./.
@@ -73,6 +74,7 @@ in
       day_4 = rustPackages.unknown.day_4."0.1.0";
       day_5 = rustPackages.unknown.day_5."0.1.0";
       day_6 = rustPackages.unknown.day_6."0.1.0";
+      day_7 = rustPackages.unknown.day_7."0.1.0";
       day_8 = rustPackages.unknown.day_8."0.1.0";
     };
     "registry+https://github.com/rust-lang/crates.io-index".aho-corasick."1.1.3" = overridableMkRustCrate (profileName: rec {
@@ -492,6 +494,23 @@ in
       };
     });
 
+    "unknown".day_7."0.1.0" = overridableMkRustCrate (profileName: rec {
+      name = "day_7";
+      version = "0.1.0";
+      registry = "unknown";
+      src = fetchCrateLocal workspaceSrc;
+      features = builtins.concatLists [
+        (lib.optional (rootFeatures' ? "day_7/no_real_inputs") "no_real_inputs")
+      ];
+      dependencies = {
+        intcode = (rustPackages."unknown".intcode."0.1.0" {inherit profileName;}).out;
+        itertools = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".itertools."0.13.0" {inherit profileName;}).out;
+      };
+      devDependencies = {
+        criterion = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".criterion."0.4.0" {inherit profileName;}).out;
+      };
+    });
+
     "unknown".day_8."0.1.0" = overridableMkRustCrate (profileName: rec {
       name = "day_8";
       version = "0.1.0";
@@ -641,6 +660,24 @@ in
       src = fetchCratesIo {
         inherit name version;
         sha256 = "b0fd2260e829bddf4cb6ea802289de2f86d6a7a690192fbe91b3f46e0f2c8473";
+      };
+      features = builtins.concatLists [
+        ["default"]
+        ["use_alloc"]
+        ["use_std"]
+      ];
+      dependencies = {
+        either = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".either."1.13.0" {inherit profileName;}).out;
+      };
+    });
+
+    "registry+https://github.com/rust-lang/crates.io-index".itertools."0.13.0" = overridableMkRustCrate (profileName: rec {
+      name = "itertools";
+      version = "0.13.0";
+      registry = "registry+https://github.com/rust-lang/crates.io-index";
+      src = fetchCratesIo {
+        inherit name version;
+        sha256 = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186";
       };
       features = builtins.concatLists [
         ["default"]
