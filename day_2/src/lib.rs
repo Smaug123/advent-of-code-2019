@@ -13,11 +13,11 @@ pub mod day_2 {
         T: IntoIterator<Item = usize>,
         T: Clone,
     {
-        let mut machine = MachineState::new_with_memory(numbers, std::iter::empty());
+        let mut machine = MachineState::new_with_memory(numbers);
         machine.set_mem_elt(1, 12)?;
         machine.set_mem_elt(2, 2)?;
 
-        machine.execute_to_end(&num::usize())?;
+        machine.execute_to_end(&mut std::iter::empty(), &num::usize())?;
 
         let result = machine.read_mem_elt(0)?;
         Ok(*result)
@@ -28,15 +28,17 @@ pub mod day_2 {
         T: IntoIterator<Item = usize>,
         T: Clone,
     {
-        let mut machine = MachineState::new(std::iter::empty());
+        let mut machine = MachineState::new();
         let (noun, verb) = (0..=99)
             .filter_map(|noun| {
                 (0..=99)
                     .filter_map(|verb| {
-                        machine.reset_memory(numbers.clone());
+                        machine.reset(numbers.clone());
                         machine.set_mem_elt(1, noun).ok()?;
                         machine.set_mem_elt(2, verb).ok()?;
-                        machine.execute_to_end(&num::usize()).ok()?;
+                        machine
+                            .execute_to_end(&mut std::iter::empty(), &num::usize())
+                            .ok()?;
                         // safety: on termination, program counter is on opcode 99,
                         // so there is an element in the array
                         if *machine.read_mem_elt(0).unwrap() == target {
