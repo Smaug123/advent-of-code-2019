@@ -10,7 +10,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     });
     c.bench_function("day 5 part 2", |b| {
         b.iter(|| {
-            black_box(part_2(&input, 19690720));
+            black_box(part_2(&input).unwrap());
         })
     });
 }
