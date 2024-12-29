@@ -1,4 +1,5 @@
 pub mod day_5 {
+    use intcode::intcode::num;
     use intcode::intcode::{MachineExecutionError, MachineState};
 
     pub fn input(s: &str) -> Vec<i32> {
@@ -14,13 +15,7 @@ pub mod day_5 {
         T: Clone,
     {
         let mut machine = MachineState::new_with_memory(numbers, std::iter::once(1));
-        let outputs = machine.execute_to_end(&|i| {
-            if i < 0 {
-                None
-            } else {
-                Some(i as usize)
-            }
-        })?;
+        let outputs = machine.execute_to_end(&num::i32())?;
         let mut outputs_iter = outputs.iter().rev();
         let ans = *outputs_iter.next().unwrap();
         for &output in outputs_iter {
@@ -32,13 +27,18 @@ pub mod day_5 {
         Ok(ans)
     }
 
-    pub fn part_2<T>(numbers: &T) -> usize
+    pub fn part_2<T>(numbers: &T) -> Result<i32, MachineExecutionError>
     where
         T: IntoIterator<Item = i32>,
         T: Clone,
     {
-        let mut machine = MachineState::new_with_memory(numbers, std::iter::once(1));
-        todo!()
+        let mut machine = MachineState::new_with_memory(numbers, std::iter::once(5));
+        let outputs = machine.execute_to_end(&num::i32())?;
+        if outputs.len() != 1 {
+            panic!("bad len {}", outputs.len())
+        }
+
+        Ok(outputs[0])
     }
 }
 
@@ -51,6 +51,6 @@ mod tests {
     fn test_day_5() {
         let input = input(include_str!("../input.txt"));
         assert_eq!(part_1(&input).unwrap(), 6731945);
-        assert_eq!(part_2(&input), 9571668);
+        assert_eq!(part_2(&input).unwrap(), 9571668);
     }
 }

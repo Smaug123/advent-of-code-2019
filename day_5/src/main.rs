@@ -41,6 +41,6 @@ fn main() -> Result<(), Error> {
     let input = day_5::input(&input_str);
 
     println!("part 1 => {}", day_5::part_1(&input)?);
-    println!("part 2 => {}", day_5::part_2(&input));
+    println!("part 2 => {}", day_5::part_2(&input)?);
     Ok(())
 }
