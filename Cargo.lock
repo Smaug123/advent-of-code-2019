@@ -215,6 +215,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "day_5"
+version = "0.1.0"
+dependencies = [
+ "criterion",
+ "intcode",
+]
+
+[[package]]
 name = "day_6"
 version = "0.1.0"
 dependencies = [

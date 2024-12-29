@@ -1,5 +1,5 @@
 pub mod day_2 {
-    use intcode::intcode::{MachineExecutionError, MachineState};
+    use intcode::intcode::{num, MachineExecutionError, MachineState};
 
     pub fn input(s: &str) -> Vec<usize> {
         s.trim()
@@ -13,11 +13,11 @@ pub mod day_2 {
         T: IntoIterator<Item = usize>,
         T: Clone,
     {
-        let mut machine = MachineState::new_with_memory(numbers);
+        let mut machine = MachineState::new_with_memory(numbers, std::iter::empty());
         machine.set_mem_elt(1, 12)?;
         machine.set_mem_elt(2, 2)?;
 
-        machine.execute_to_end()?;
+        machine.execute_to_end(&num::usize())?;
 
         let result = machine.read_mem_elt(0)?;
         Ok(*result)
@@ -28,7 +28,7 @@ pub mod day_2 {
         T: IntoIterator<Item = usize>,
         T: Clone,
     {
-        let mut machine = MachineState::new();
+        let mut machine = MachineState::new(std::iter::empty());
         let (noun, verb) = (0..=99)
             .filter_map(|noun| {
                 (0..=99)
@@ -36,7 +36,7 @@ pub mod day_2 {
                         machine.reset_memory(numbers.clone());
                         machine.set_mem_elt(1, noun).ok()?;
                         machine.set_mem_elt(2, verb).ok()?;
-                        machine.execute_to_end().ok()?;
+                        machine.execute_to_end(&num::usize()).ok()?;
                         // safety: on termination, program counter is on opcode 99,
                         // so there is an element in the array
                         if *machine.read_mem_elt(0).unwrap() == target {
