@@ -320,14 +320,14 @@ impl<T> MachineState<T> {
 
     pub fn read_mem_elt(&self, i: usize) -> T
     where
-        T: Clone + Num,
+        T: Num + Copy,
     {
         if i < self.memory.len() {
-            self.memory[i].clone()
+            self.memory[i]
         } else {
             match self.sparse_memory.get(&i) {
-                None => T::zero().clone(),
-                Some(entry) => entry.clone(),
+                None => T::zero(),
+                Some(entry) => *entry,
             }
         }
     }
@@ -341,10 +341,7 @@ impl<T> MachineState<T> {
             ParameterMode::Position => {
                 let pos = self.read_mem_elt(i);
                 let pos = T::to_usize(pos);
-                match pos {
-                    None => None,
-                    Some(pos) => Some(self.read_mem_elt(pos)),
-                }
+                pos.map(|x| self.read_mem_elt(x))
             }
         }
     }
