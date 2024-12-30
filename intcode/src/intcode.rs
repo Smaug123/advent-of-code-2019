@@ -139,6 +139,7 @@ impl<T> MachineState<T> {
         self.pc = 0;
         self.memory.clear();
         self.memory.extend(mem);
+        self.sparse_memory.clear();
     }
 
     fn process_binary_op<G, H>(
