@@ -153,13 +153,11 @@ impl<T> MachineState<T> {
             .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
         let arg_1 = self
             .read_param(self.pc + 1, mode_1)
-            .map_err(|()| MachineExecutionError::OutOfBounds)?
-            .map(|x| *x)
+            .map_err(|()| MachineExecutionError::OutOfBounds)?.copied()
             .unwrap_or(T::zero());
         let arg_2 = self
             .read_param(self.pc + 2, mode_2)
-            .map_err(|()| MachineExecutionError::OutOfBounds)?
-            .map(|x| *x)
+            .map_err(|()| MachineExecutionError::OutOfBounds)?.copied()
             .unwrap_or(T::zero());
 
         let result_pos = match self.read_mem_elt(self.pc + 3) {
@@ -212,9 +210,9 @@ impl<T> MachineState<T> {
                                 T::to_usize(*addr).ok_or(MachineExecutionError::OutOfBounds)?
                             }
                         };
-                        self.read_mem_elt(addr).map(|x| *x)
+                        self.read_mem_elt(addr).copied()
                     }
-                    ParameterMode::Immediate => self.read_mem_elt(self.pc + 1).map(|x| *x),
+                    ParameterMode::Immediate => self.read_mem_elt(self.pc + 1).copied(),
                 };
                 self.pc += 2;
                 Ok(StepResult::Io(StepIoResult::Output(
@@ -342,20 +340,22 @@ impl<T> MachineState<T> {
     }
 
     pub fn set_mem_elt(&mut self, i: usize, new_val: T) {
-        if i < self.memory.len() {
-            self.memory[i] = new_val;
-        } else {
-            self.sparse_memory.insert(i, new_val);
+        match self.memory.get_mut(i) {
+            None => {
+                self.sparse_memory.insert(i, new_val);
+            }
+            Some(loc) => {
+                *loc = new_val;
+            }
         }
     }
 
     // All outcomes are "success". A None result means the memory is not
     // yet initialised (so is implicitly 0), and is outside the dense array storage.
     pub fn read_mem_elt(&self, i: usize) -> Option<&T> {
-        if i < self.memory.len() {
-            Some(&self.memory[i])
-        } else {
-            self.sparse_memory.get(&i)
+        match self.memory.get(i) {
+            None => self.sparse_memory.get(&i),
+            Some(mem) => Some(mem),
         }
     }
 
