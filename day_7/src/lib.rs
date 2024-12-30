@@ -1,7 +1,7 @@
 pub mod day_7 {
     use std::array;
 
-    use intcode::intcode::{num, StepIoResult};
+    use intcode::intcode::StepIoResult;
     use intcode::intcode::{MachineExecutionError, MachineState};
     use itertools::Itertools;
 
@@ -20,17 +20,13 @@ pub mod day_7 {
         Terminated,
     }
 
-    pub fn initialise<F, const N: usize>(
+    pub fn initialise<const N: usize>(
         phase: &[u8],
         machines: &mut [MachineState<i32>; N],
-        num: &num::NumImpl<i32, F>,
-    ) -> Result<(), MachineExecutionError>
-    where
-        F: Fn(i32) -> Option<usize>,
-    {
+    ) -> Result<(), MachineExecutionError> {
         for i in 0..N {
             let phase = phase[i];
-            match machines[i].execute_until_input(num)? {
+            match machines[i].execute_until_input()? {
                 StepIoResult::AwaitingInput(loc) => {
                     machines[i].set_mem_elt(loc, phase as i32);
                 }
@@ -44,15 +40,11 @@ pub mod day_7 {
 
     /// Runs until machine E emits a value, returning that value;
     /// or until all machines have halted, in which case you get back None.
-    fn execute<F, const N: usize>(
+    fn execute<const N: usize>(
         input_to_first: Option<i32>,
         readiness: &mut [ExecutionState<i32>; N],
         machines: &mut [MachineState<i32>; N],
-        num: &num::NumImpl<i32, F>,
-    ) -> Result<Option<i32>, MachineExecutionError>
-    where
-        F: Fn(i32) -> Option<usize>,
-    {
+    ) -> Result<Option<i32>, MachineExecutionError> {
         let mut first_input_consumed = false;
 
         loop {
@@ -62,7 +54,7 @@ pub mod day_7 {
                 match readiness[i] {
                     ExecutionState::Ready => {
                         progress_made = true;
-                        match machines[i].execute_until_input(num)? {
+                        match machines[i].execute_until_input()? {
                             StepIoResult::Terminated => {
                                 readiness[i] = ExecutionState::Terminated;
                             }
@@ -137,17 +129,16 @@ pub mod day_7 {
         T: IntoIterator<Item = i32>,
         T: Clone,
     {
-        let num = num::i32();
         let mut machines: [MachineState<_>; 5] =
             array::from_fn(|_| MachineState::new_with_memory(numbers));
 
         let mut best = i32::MIN;
 
         for phase in (0..=4).permutations(5) {
-            initialise(&phase, &mut machines, &num)?;
+            initialise(&phase, &mut machines)?;
             let mut readiness = [ExecutionState::<i32>::Ready; 5];
 
-            let result = execute(None, &mut readiness, &mut machines, &num)?.unwrap();
+            let result = execute(None, &mut readiness, &mut machines)?.unwrap();
             if result > best {
                 best = result;
             }
@@ -163,20 +154,19 @@ pub mod day_7 {
         T: IntoIterator<Item = i32>,
         T: Clone,
     {
-        let num = num::i32();
         let mut machines: [MachineState<_>; 5] =
             array::from_fn(|_| MachineState::new_with_memory(numbers));
 
         let mut best = i32::MIN;
 
         for phase in (5..=9).permutations(5) {
-            initialise(&phase, &mut machines, &num)?;
+            initialise(&phase, &mut machines)?;
 
             let mut readiness = [ExecutionState::<i32>::Ready; 5];
 
             let mut input_to_first = None;
 
-            while let Some(result) = execute(input_to_first, &mut readiness, &mut machines, &num)? {
+            while let Some(result) = execute(input_to_first, &mut readiness, &mut machines)? {
                 input_to_first = Some(result);
             }
 
