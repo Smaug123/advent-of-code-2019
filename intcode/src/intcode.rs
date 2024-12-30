@@ -50,29 +50,11 @@ impl Num for usize {
 }
 
 #[derive(Error, Debug)]
-#[error(
-    "attempted to access position {pos} but memory only has length {len} (is_write: {is_write})"
-)]
-pub struct MemoryAccessTooFarError {
-    pos: usize,
-    len: usize,
-    is_write: bool,
-}
-
-#[derive(Error, Debug)]
-pub enum MemoryAccessError {
-    #[error(transparent)]
-    TooFar(#[from] MemoryAccessTooFarError),
-    #[error("attempted to access negative memory index")]
-    Negative,
-}
-
-#[derive(Error, Debug)]
 pub enum MachineExecutionError {
     #[error("instruction {0} at position {1} unrecognised")]
     BadOpcode(usize, usize),
-    #[error(transparent)]
-    OutOfBounds(#[from] MemoryAccessError),
+    #[error("attempted to access negative memory index")]
+    OutOfBounds,
     #[error("input requested but no input provided")]
     NoInput,
     #[error("invalid parameter mode {0}")]
@@ -169,13 +151,17 @@ impl<T> MachineState<T> {
             .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
         let mode_2 = ParameterMode::of_int((opcode / 1000) % 10)
             .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
-        let arg_1 = self.read_param(self.pc + 1, mode_1)?;
-        let arg_2 = self.read_param(self.pc + 2, mode_2)?;
+        let arg_1 = self
+            .read_param(self.pc + 1, mode_1)
+            .ok_or(MachineExecutionError::OutOfBounds)?;
+        let arg_2 = self
+            .read_param(self.pc + 2, mode_2)
+            .ok_or(MachineExecutionError::OutOfBounds)?;
 
         let result_pos = self.read_mem_elt(self.pc + 3);
 
         self.set_mem_elt(
-            T::to_usize(result_pos).ok_or(MemoryAccessError::Negative)?,
+            T::to_usize(result_pos).ok_or(MachineExecutionError::OutOfBounds)?,
             process(arg_1, arg_2),
         );
         self.pc += 4;
@@ -187,9 +173,7 @@ impl<T> MachineState<T> {
         T: Add<T, Output = T> + Mul<T, Output = T> + Copy + std::cmp::Ord + Num,
     {
         let opcode = self.read_mem_elt(self.pc);
-        let opcode: usize = T::to_usize(opcode).ok_or(MachineExecutionError::OutOfBounds(
-            MemoryAccessError::Negative,
-        ))?;
+        let opcode: usize = T::to_usize(opcode).ok_or(MachineExecutionError::OutOfBounds)?;
         match opcode % 100 {
             1_usize => self.process_binary_op(opcode, |a, b| a + b),
             2 => self.process_binary_op(opcode, |a, b| a * b),
@@ -198,7 +182,7 @@ impl<T> MachineState<T> {
                     return Err(MachineExecutionError::BadParameterMode(opcode));
                 }
                 let location = self.read_mem_elt(self.pc + 1);
-                let location = T::to_usize(location).ok_or(MemoryAccessError::Negative)?;
+                let location = T::to_usize(location).ok_or(MachineExecutionError::OutOfBounds)?;
                 self.pc += 2;
                 Ok(StepResult::Io(StepIoResult::AwaitingInput(location)))
             }
@@ -211,7 +195,7 @@ impl<T> MachineState<T> {
                 let to_output = match mode {
                     ParameterMode::Position => {
                         let addr = T::to_usize(self.read_mem_elt(self.pc + 1))
-                            .ok_or(MemoryAccessError::Negative)?;
+                            .ok_or(MachineExecutionError::OutOfBounds)?;
                         self.read_mem_elt(addr)
                     }
                     ParameterMode::Immediate => self.read_mem_elt(self.pc + 1),
@@ -225,12 +209,16 @@ impl<T> MachineState<T> {
                 }
                 let mode_comparand = ParameterMode::of_int((opcode / 100) % 10)
                     .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
-                let comparand = self.read_param(self.pc + 1, mode_comparand)?;
+                let comparand = self
+                    .read_param(self.pc + 1, mode_comparand)
+                    .ok_or(MachineExecutionError::OutOfBounds)?;
                 if comparand != T::zero() {
                     let mode_target = ParameterMode::of_int((opcode / 1000) % 10)
                         .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
-                    let target = self.read_param(self.pc + 2, mode_target)?;
-                    self.pc = T::to_usize(target).ok_or(MemoryAccessError::Negative)?;
+                    let target = self
+                        .read_param(self.pc + 2, mode_target)
+                        .ok_or(MachineExecutionError::OutOfBounds)?;
+                    self.pc = T::to_usize(target).ok_or(MachineExecutionError::OutOfBounds)?;
                 } else {
                     self.pc += 3;
                 }
@@ -242,12 +230,16 @@ impl<T> MachineState<T> {
                 }
                 let mode_comparand = ParameterMode::of_int((opcode / 100) % 10)
                     .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
-                let comparand = self.read_param(self.pc + 1, mode_comparand)?;
+                let comparand = self
+                    .read_param(self.pc + 1, mode_comparand)
+                    .ok_or(MachineExecutionError::OutOfBounds)?;
                 if comparand == T::zero() {
                     let mode_target = ParameterMode::of_int((opcode / 1000) % 10)
                         .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
-                    let target = self.read_param(self.pc + 2, mode_target)?;
-                    self.pc = T::to_usize(target).ok_or(MemoryAccessError::Negative)?;
+                    let target = self
+                        .read_param(self.pc + 2, mode_target)
+                        .ok_or(MachineExecutionError::OutOfBounds)?;
+                    self.pc = T::to_usize(target).ok_or(MachineExecutionError::OutOfBounds)?;
                 } else {
                     self.pc += 3;
                 }
@@ -340,18 +332,18 @@ impl<T> MachineState<T> {
         }
     }
 
-    fn read_param(&self, i: usize, mode: ParameterMode) -> Result<T, MemoryAccessError>
+    fn read_param(&self, i: usize, mode: ParameterMode) -> Option<T>
     where
         T: Copy + Num,
     {
         match mode {
-            ParameterMode::Immediate => Ok(self.read_mem_elt(i)),
+            ParameterMode::Immediate => Some(self.read_mem_elt(i)),
             ParameterMode::Position => {
                 let pos = self.read_mem_elt(i);
                 let pos = T::to_usize(pos);
                 match pos {
-                    None => Err(MemoryAccessError::Negative),
-                    Some(pos) => Ok(self.read_mem_elt(pos)),
+                    None => None,
+                    Some(pos) => Some(self.read_mem_elt(pos)),
                 }
             }
         }
