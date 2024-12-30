@@ -153,11 +153,13 @@ impl<T> MachineState<T> {
             .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
         let arg_1 = self
             .read_param(self.pc + 1, mode_1)
-            .map_err(|()| MachineExecutionError::OutOfBounds)?.copied()
+            .map_err(|()| MachineExecutionError::OutOfBounds)?
+            .copied()
             .unwrap_or(T::zero());
         let arg_2 = self
             .read_param(self.pc + 2, mode_2)
-            .map_err(|()| MachineExecutionError::OutOfBounds)?.copied()
+            .map_err(|()| MachineExecutionError::OutOfBounds)?
+            .copied()
             .unwrap_or(T::zero());
 
         let result_pos = match self.read_mem_elt(self.pc + 3) {
@@ -353,10 +355,7 @@ impl<T> MachineState<T> {
     // All outcomes are "success". A None result means the memory is not
     // yet initialised (so is implicitly 0), and is outside the dense array storage.
     pub fn read_mem_elt(&self, i: usize) -> Option<&T> {
-        match self.memory.get(i) {
-            None => self.sparse_memory.get(&i),
-            Some(mem) => Some(mem),
-        }
+        self.memory.get(i).or_else(|| self.sparse_memory.get(&i))
     }
 
     // Success outcome:
