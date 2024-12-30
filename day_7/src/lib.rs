@@ -1,8 +1,8 @@
 pub mod day_7 {
     use std::array;
 
-    use intcode::intcode::StepIoResult;
     use intcode::intcode::{MachineExecutionError, MachineState};
+    use intcode::intcode::{Num, StepIoResult};
     use itertools::Itertools;
 
     pub fn input(s: &str) -> Vec<i32> {
@@ -118,6 +118,7 @@ pub mod day_7 {
     where
         I: IntoIterator<Item = T>,
         I: Clone,
+        T: Num,
     {
         for machine in machines {
             machine.reset(initial.clone());

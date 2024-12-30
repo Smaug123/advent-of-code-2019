@@ -28,7 +28,7 @@ pub mod day_2 {
         T: IntoIterator<Item = usize>,
         T: Clone,
     {
-        let mut machine = MachineState::new();
+        let mut machine = MachineState::new_with_memory(&std::iter::empty());
         let (noun, verb) = (0..=99)
             .filter_map(|noun| {
                 (0..=99)

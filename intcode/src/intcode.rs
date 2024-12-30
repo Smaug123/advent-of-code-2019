@@ -1,13 +1,63 @@
-use std::{
-    collections::HashMap,
-    ops::{Add, Mul},
-};
+use std::num::NonZero;
+use std::ops::{Add, Mul};
 use thiserror::Error;
+
+#[derive(Clone)]
+struct UsizeHashmap<T> {
+    indices: Vec<NonZero<usize>>,
+    contents: Vec<T>,
+}
+
+impl<T> UsizeHashmap<T> {
+    // Look up the index at which `i` appears, if it does.
+    fn find_index(&self, i: NonZero<usize>) -> Option<usize> {
+        self.indices
+            .iter()
+            .copied()
+            .enumerate()
+            .find(|(_vec_index, stored)| i == *stored)
+            .map(|(vec_index, _)| vec_index)
+    }
+
+    fn find(&self, i: NonZero<usize>) -> Option<T>
+    where
+        T: Clone,
+    {
+        self.find_index(i)
+            .map(|index| (unsafe { self.contents.get_unchecked(index) }).clone())
+    }
+
+    fn insert(&mut self, index: NonZero<usize>, v: T) {
+        match self.find_index(index) {
+            Some(vec_index) => {
+                unsafe {
+                    *self.contents.get_unchecked_mut(vec_index) = v;
+                };
+            }
+            None => {
+                self.contents.push(v);
+                self.indices.push(index);
+            }
+        }
+    }
+
+    fn clear(&mut self) {
+        self.indices.clear();
+        self.contents.clear();
+    }
+
+    fn new() -> Self {
+        Self {
+            indices: vec![],
+            contents: vec![],
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct MachineState<T> {
     memory: Vec<T>,
-    sparse_memory: HashMap<usize, T>,
+    sparse_memory: UsizeHashmap<T>,
     pc: usize,
 }
 
@@ -84,9 +134,9 @@ impl<T> From<StepIoResult<T>> for StepResult<T> {
 }
 
 pub enum MemoryReadResult<'a, T> {
-    Dense(&'a T),
+    Dense(T),
     Sparse(&'a T),
-    Uninitialised
+    Uninitialised,
 }
 
 enum ParameterMode {
@@ -104,29 +154,22 @@ impl ParameterMode {
     }
 }
 
-impl<T> Default for MachineState<T> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl<T> MachineState<T> {
-    pub fn new() -> MachineState<T> {
-        MachineState {
-            memory: vec![],
-            sparse_memory: HashMap::new(),
-            pc: 0,
-        }
-    }
-
     pub fn new_with_memory<J>(mem: &J) -> MachineState<T>
     where
         J: IntoIterator<Item = T>,
         J: Clone,
+        T: Num,
     {
+        let mut mem: Vec<T> = mem.clone().into_iter().collect();
+        // Critical for safety: need the UsizeHashmap to never contain 0
+        if mem.is_empty() {
+            mem.push(T::zero())
+        }
+
         MachineState {
-            memory: mem.clone().into_iter().collect(),
-            sparse_memory: HashMap::new(),
+            memory: mem,
+            sparse_memory: UsizeHashmap::new(),
             pc: 0,
         }
     }
@@ -134,19 +177,19 @@ impl<T> MachineState<T> {
     pub fn reset<J>(&mut self, mem: J)
     where
         J: IntoIterator<Item = T> + Clone,
+        T: Num,
     {
         self.pc = 0;
         self.memory.clear();
         self.memory.extend(mem);
+        if self.memory.is_empty() {
+            self.memory.push(T::zero());
+        }
         self.sparse_memory.clear();
     }
 
-    pub fn get_value(&self, result: MemoryReadResult<T>) -> T where T: Num + Clone {
-        match result {
-            MemoryReadResult::Dense(loc) => (*loc).clone(),
-            MemoryReadResult::Sparse(loc) => (*loc).clone(),
-            MemoryReadResult::Uninitialised => T::zero(),
-        }
+    pub fn get_value(&self, result: T) -> T {
+        result
     }
 
     fn process_binary_op<G>(
@@ -173,9 +216,12 @@ impl<T> MachineState<T> {
             .map_err(|()| MachineExecutionError::OutOfBounds)?;
 
         let result_pos = T::to_usize(self.get_value(self.read_mem_elt(self.pc + 3)))
-                .ok_or(MachineExecutionError::OutOfBounds)?;
+            .ok_or(MachineExecutionError::OutOfBounds)?;
 
-        self.set_mem_elt(result_pos, process(self.get_value(arg_1), self.get_value(arg_2)));
+        self.set_mem_elt(
+            result_pos,
+            process(self.get_value(arg_1), self.get_value(arg_2)),
+        );
         self.pc += 4;
         Ok(StepResult::Stepped)
     }
@@ -184,7 +230,8 @@ impl<T> MachineState<T> {
     where
         T: Add<T, Output = T> + Mul<T, Output = T> + Copy + std::cmp::Ord + Num,
     {
-        let opcode = T::to_usize(self.get_value(self.read_mem_elt(self.pc))).ok_or(MachineExecutionError::OutOfBounds)?;
+        let opcode = T::to_usize(self.get_value(self.read_mem_elt(self.pc)))
+            .ok_or(MachineExecutionError::OutOfBounds)?;
         match opcode % 100 {
             1_usize => self.process_binary_op(opcode, |a, b| a + b),
             2 => self.process_binary_op(opcode, |a, b| a * b),
@@ -192,7 +239,8 @@ impl<T> MachineState<T> {
                 if opcode != 3 {
                     return Err(MachineExecutionError::BadParameterMode(opcode));
                 }
-                let location = T::to_usize(self.get_value(self.read_mem_elt(self.pc + 1))).ok_or(MachineExecutionError::OutOfBounds)?;
+                let location = T::to_usize(self.get_value(self.read_mem_elt(self.pc + 1)))
+                    .ok_or(MachineExecutionError::OutOfBounds)?;
                 self.pc += 2;
                 Ok(StepResult::Io(StepIoResult::AwaitingInput(location)))
             }
@@ -204,15 +252,14 @@ impl<T> MachineState<T> {
                     .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
                 let to_output = match mode {
                     ParameterMode::Position => {
-                        let addr = T::to_usize(self.get_value(self.read_mem_elt(self.pc + 1))).ok_or(MachineExecutionError::OutOfBounds)?;
+                        let addr = T::to_usize(self.get_value(self.read_mem_elt(self.pc + 1)))
+                            .ok_or(MachineExecutionError::OutOfBounds)?;
                         self.get_value(self.read_mem_elt(addr))
                     }
                     ParameterMode::Immediate => self.get_value(self.read_mem_elt(self.pc + 1)),
                 };
                 self.pc += 2;
-                Ok(StepResult::Io(StepIoResult::Output(
-                    to_output
-                )))
+                Ok(StepResult::Io(StepIoResult::Output(to_output)))
             }
             5 => {
                 if opcode >= 10000 {
@@ -224,17 +271,18 @@ impl<T> MachineState<T> {
                     .read_param(self.pc + 1, mode_comparand)
                     .map_err(|()| MachineExecutionError::OutOfBounds)?;
                 let comparand = self.get_value(comparand);
-                        if comparand != T::zero() {
-                            let mode_target = ParameterMode::of_int((opcode / 1000) % 10)
-                                .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
-                            let target = self
-                                .read_param(self.pc + 2, mode_target)
-                                .map_err(|()| MachineExecutionError::OutOfBounds)?;
-                            let target = T::to_usize(self.get_value(target)).ok_or(MachineExecutionError::OutOfBounds)?;
-                            self.pc = target;
-                        } else {
-                            self.pc += 3;
-                        }
+                if comparand != T::zero() {
+                    let mode_target = ParameterMode::of_int((opcode / 1000) % 10)
+                        .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
+                    let target = self
+                        .read_param(self.pc + 2, mode_target)
+                        .map_err(|()| MachineExecutionError::OutOfBounds)?;
+                    let target = T::to_usize(self.get_value(target))
+                        .ok_or(MachineExecutionError::OutOfBounds)?;
+                    self.pc = target;
+                } else {
+                    self.pc += 3;
+                }
                 Ok(StepResult::Stepped)
             }
             6 => {
@@ -253,7 +301,8 @@ impl<T> MachineState<T> {
                     let target = self
                         .read_param(self.pc + 2, mode_target)
                         .map_err(|()| MachineExecutionError::OutOfBounds)?;
-                    let target = T::to_usize(self.get_value(target)).ok_or(MachineExecutionError::OutOfBounds)?;
+                    let target = T::to_usize(self.get_value(target))
+                        .ok_or(MachineExecutionError::OutOfBounds)?;
                     self.pc = target;
                 } else {
                     self.pc += 3;
@@ -328,6 +377,8 @@ impl<T> MachineState<T> {
     pub fn set_mem_elt(&mut self, i: usize, new_val: T) {
         match self.memory.get_mut(i) {
             None => {
+                // SAFETY: `memory` never has length 0, so the `get` will always succeed if `i == 0`
+                let i = unsafe { NonZero::new_unchecked(i) };
                 self.sparse_memory.insert(i, new_val);
             }
             Some(loc) => {
@@ -336,35 +387,44 @@ impl<T> MachineState<T> {
         }
     }
 
-    // All outcomes are "success". A None result means the memory is not
-    // yet initialised (so is implicitly 0), and is outside the dense array storage.
-    pub fn read_mem_elt(&self, i: usize) -> MemoryReadResult<T> {
-        match self.memory.get(i) {
-            Some(entry) => MemoryReadResult::Dense(entry),
-            None =>
-            { todo!() }
-                // match self.sparse_memory.get(&i) {
-                //     Some(entry) => MemoryReadResult::Sparse(entry),
-                //     None => MemoryReadResult::Uninitialised
-                // }
+    #[cold]
+    #[inline(never)] // Perf-critical for the dense case that this never be inlined!
+                     // SAFETY: Do not call this with `i = 0`; that is undefined behaviour.
+    fn read_sparse(&self, i: usize) -> T
+    where
+        T: Clone + Num,
+    {
+        let i = unsafe { NonZero::new_unchecked(i) };
+        match self.sparse_memory.find(i) {
+            Some(entry) => entry.clone(),
+            None => T::zero(),
         }
     }
 
-    // Success outcome:
-    // A None result means the memory is not yet initialised, so is implicitly 0 (and is outside the dense array storage).
+    #[inline]
+    pub fn read_mem_elt(&self, i: usize) -> T
+    where
+        T: Clone + Num,
+    {
+        match self.memory.get(i) {
+            Some(entry) => entry.clone(),
+            None => {
+                // SAFETY: `memory` never has length 0, so the `get` earlier will always succeed if
+                // `i == 0`.
+                self.read_sparse(i)
+            }
+        }
+    }
+
     // Error outcome: we failed to convert the contents of a piece of memory to an address.
-    fn read_param(&self, i: usize, mode: ParameterMode) -> Result<MemoryReadResult<T>, ()>
+    fn read_param(&self, i: usize, mode: ParameterMode) -> Result<T, ()>
     where
         T: Copy + Num,
     {
         match mode {
             ParameterMode::Immediate => Ok(self.read_mem_elt(i)),
             ParameterMode::Position => {
-                let pos = match self.read_mem_elt(i) {
-                    MemoryReadResult::Uninitialised => 0usize,
-                    MemoryReadResult::Dense(pos) => T::to_usize(*pos).ok_or(())?,
-                    MemoryReadResult::Sparse(pos) => T::to_usize(*pos).ok_or(())?,
-                };
+                let pos = T::to_usize(self.read_mem_elt(i)).ok_or(())?;
                 Ok(self.read_mem_elt(pos))
             }
         }
