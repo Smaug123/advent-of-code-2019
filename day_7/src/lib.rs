@@ -20,19 +20,20 @@ pub mod day_7 {
         Terminated,
     }
 
-    pub fn initialise<F, const N: usize>(
+    pub fn initialise<F, G, const N: usize>(
         phase: &[u8],
         machines: &mut [MachineState<i32>; N],
-        num: &num::NumImpl<i32, F>,
+        num: &num::NumImpl<i32, F, G>,
     ) -> Result<(), MachineExecutionError>
     where
         F: Fn(i32) -> Option<usize>,
+        G: Fn(i32) -> Option<i32>,
     {
         for i in 0..N {
             let phase = phase[i];
             match machines[i].execute_until_input(num)? {
                 StepIoResult::AwaitingInput(loc) => {
-                    machines[i].set_mem_elt(loc, phase as i32)?;
+                    machines[i].set_mem_elt(loc, phase as i32);
                 }
                 _ => {
                     panic!("unexpected IO result from machine {i}");
@@ -44,14 +45,15 @@ pub mod day_7 {
 
     /// Runs until machine E emits a value, returning that value;
     /// or until all machines have halted, in which case you get back None.
-    fn execute<F, const N: usize>(
+    fn execute<F, G, const N: usize>(
         input_to_first: Option<i32>,
         readiness: &mut [ExecutionState<i32>; N],
         machines: &mut [MachineState<i32>; N],
-        num: &num::NumImpl<i32, F>,
+        num: &num::NumImpl<i32, F, G>,
     ) -> Result<Option<i32>, MachineExecutionError>
     where
         F: Fn(i32) -> Option<usize>,
+        G: Fn(i32) -> Option<i32>,
     {
         let mut first_input_consumed = false;
 
@@ -80,10 +82,10 @@ pub mod day_7 {
                                 progress_made = true;
                                 match input_to_first {
                                     None => {
-                                        machines[0].set_mem_elt(loc, 0)?;
+                                        machines[0].set_mem_elt(loc, 0);
                                     }
                                     Some(input) => {
-                                        machines[0].set_mem_elt(loc, input)?;
+                                        machines[0].set_mem_elt(loc, input);
                                         readiness[N - 1] = ExecutionState::Ready;
                                     }
                                 }
@@ -94,7 +96,7 @@ pub mod day_7 {
                             match readiness[i - 1] {
                                 ExecutionState::OutputPending(output) => {
                                     progress_made = true;
-                                    machines[i].set_mem_elt(loc, output)?;
+                                    machines[i].set_mem_elt(loc, output);
                                     readiness[i] = ExecutionState::Ready;
                                     readiness[i - 1] = ExecutionState::Ready;
                                 }
