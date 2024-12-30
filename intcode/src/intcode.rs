@@ -1,9 +1,13 @@
-use std::ops::{Add, Mul};
+use std::{
+    collections::HashMap,
+    ops::{Add, Mul},
+};
 use thiserror::Error;
 
 #[derive(Clone)]
 pub struct MachineState<T> {
     memory: Vec<T>,
+    sparse_memory: HashMap<usize, T>,
     pc: usize,
 }
 
@@ -111,6 +115,7 @@ impl<T> MachineState<T> {
     pub fn new() -> MachineState<T> {
         MachineState {
             memory: vec![],
+            sparse_memory: HashMap::new(),
             pc: 0,
         }
     }
@@ -122,6 +127,7 @@ impl<T> MachineState<T> {
     {
         MachineState {
             memory: mem.clone().into_iter().collect(),
+            sparse_memory: HashMap::new(),
             pc: 0,
         }
     }
@@ -153,15 +159,15 @@ impl<T> MachineState<T> {
             .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
         let mode_2 = ParameterMode::of_int((opcode / 1000) % 10)
             .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
-        let arg_1 = *self.read_param(self.pc + 1, mode_1, &num.to_usize)?;
-        let arg_2 = *self.read_param(self.pc + 2, mode_2, &num.to_usize)?;
+        let arg_1 = self.read_param(self.pc + 1, mode_1, num)?;
+        let arg_2 = self.read_param(self.pc + 2, mode_2, num)?;
 
-        let result_pos = *self.read_mem_elt(self.pc + 3)?;
+        let result_pos = self.read_mem_elt(self.pc + 3, num);
 
         self.set_mem_elt(
             (num.to_usize)(result_pos).ok_or(MemoryAccessError::Negative)?,
             process(arg_1, arg_2),
-        )?;
+        );
         self.pc += 4;
         Ok(StepResult::Stepped)
     }
@@ -174,7 +180,7 @@ impl<T> MachineState<T> {
         T: Add<T, Output = T> + Mul<T, Output = T> + Copy + std::cmp::Ord,
         G: Fn(T) -> Option<usize>,
     {
-        let opcode = *self.read_mem_elt(self.pc)?;
+        let opcode = self.read_mem_elt(self.pc, num);
         let opcode: usize = (num.to_usize)(opcode).ok_or(MachineExecutionError::OutOfBounds(
             MemoryAccessError::Negative,
         ))?;
@@ -185,8 +191,8 @@ impl<T> MachineState<T> {
                 if opcode != 3 {
                     return Err(MachineExecutionError::BadParameterMode(opcode));
                 }
-                let location = self.read_mem_elt(self.pc + 1)?;
-                let location = (num.to_usize)(*location).ok_or(MemoryAccessError::Negative)?;
+                let location = self.read_mem_elt(self.pc + 1, num);
+                let location = (num.to_usize)(location).ok_or(MemoryAccessError::Negative)?;
                 self.pc += 2;
                 Ok(StepResult::Io(StepIoResult::AwaitingInput(location)))
             }
@@ -198,11 +204,11 @@ impl<T> MachineState<T> {
                     .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
                 let to_output = match mode {
                     ParameterMode::Position => {
-                        let addr = (num.to_usize)(*self.read_mem_elt(self.pc + 1)?)
+                        let addr = (num.to_usize)(self.read_mem_elt(self.pc + 1, num))
                             .ok_or(MemoryAccessError::Negative)?;
-                        *self.read_mem_elt(addr)?
+                        self.read_mem_elt(addr, num)
                     }
-                    ParameterMode::Immediate => *self.read_mem_elt(self.pc + 1)?,
+                    ParameterMode::Immediate => self.read_mem_elt(self.pc + 1, num),
                 };
                 self.pc += 2;
                 Ok(StepResult::Io(StepIoResult::Output(to_output)))
@@ -213,11 +219,11 @@ impl<T> MachineState<T> {
                 }
                 let mode_comparand = ParameterMode::of_int((opcode / 100) % 10)
                     .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
-                let comparand = *self.read_param(self.pc + 1, mode_comparand, &num.to_usize)?;
+                let comparand = self.read_param(self.pc + 1, mode_comparand, num)?;
                 if comparand != num.zero {
                     let mode_target = ParameterMode::of_int((opcode / 1000) % 10)
                         .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
-                    let target = *self.read_param(self.pc + 2, mode_target, &num.to_usize)?;
+                    let target = self.read_param(self.pc + 2, mode_target, num)?;
                     self.pc = (num.to_usize)(target).ok_or(MemoryAccessError::Negative)?;
                 } else {
                     self.pc += 3;
@@ -230,11 +236,11 @@ impl<T> MachineState<T> {
                 }
                 let mode_comparand = ParameterMode::of_int((opcode / 100) % 10)
                     .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
-                let comparand = *self.read_param(self.pc + 1, mode_comparand, &num.to_usize)?;
+                let comparand = self.read_param(self.pc + 1, mode_comparand, num)?;
                 if comparand == num.zero {
                     let mode_target = ParameterMode::of_int((opcode / 1000) % 10)
                         .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
-                    let target = *self.read_param(self.pc + 2, mode_target, &num.to_usize)?;
+                    let target = self.read_param(self.pc + 2, mode_target, num)?;
                     self.pc = (num.to_usize)(target).ok_or(MemoryAccessError::Negative)?;
                 } else {
                     self.pc += 3;
@@ -305,7 +311,7 @@ impl<T> MachineState<T> {
                         return Err(MachineExecutionError::NoInput);
                     }
                     Some(input) => {
-                        self.set_mem_elt(target_location, input)?;
+                        self.set_mem_elt(target_location, input);
                     }
                 },
             }
@@ -319,28 +325,26 @@ impl<T> MachineState<T> {
         self.memory.iter().copied()
     }
 
-    pub fn set_mem_elt(&mut self, i: usize, new_val: T) -> Result<(), MemoryAccessError> {
+    pub fn set_mem_elt(&mut self, i: usize, new_val: T) {
         if i < self.memory.len() {
             self.memory[i] = new_val;
-            Ok(())
         } else {
-            Err(MemoryAccessError::TooFar(MemoryAccessTooFarError {
-                pos: i,
-                len: self.memory.len(),
-                is_write: true,
-            }))
+            self.sparse_memory.insert(i, new_val);
         }
     }
 
-    pub fn read_mem_elt(&self, i: usize) -> Result<&T, MemoryAccessError> {
+    pub fn read_mem_elt<G>(&self, i: usize, num: &num::NumImpl<T, G>) -> T
+    where
+        G: Fn(T) -> Option<usize>,
+        T: Clone,
+    {
         if i < self.memory.len() {
-            Ok(&self.memory[i])
+            self.memory[i].clone()
         } else {
-            Err(MemoryAccessError::TooFar(MemoryAccessTooFarError {
-                pos: i,
-                len: self.memory.len(),
-                is_write: false,
-            }))
+            match self.sparse_memory.get(&i) {
+                None => num.zero.clone(),
+                Some(entry) => entry.clone(),
+            }
         }
     }
 
@@ -348,20 +352,20 @@ impl<T> MachineState<T> {
         &self,
         i: usize,
         mode: ParameterMode,
-        to_usize: &G,
-    ) -> Result<&T, MemoryAccessError>
+        num: &num::NumImpl<T, G>,
+    ) -> Result<T, MemoryAccessError>
     where
         T: Copy,
         G: Fn(T) -> Option<usize>,
     {
         match mode {
-            ParameterMode::Immediate => self.read_mem_elt(i),
+            ParameterMode::Immediate => Ok(self.read_mem_elt(i, num)),
             ParameterMode::Position => {
-                let pos = self.read_mem_elt(i)?;
-                let pos = to_usize(*pos);
+                let pos = self.read_mem_elt(i, num);
+                let pos = (num.to_usize)(pos);
                 match pos {
                     None => Err(MemoryAccessError::Negative),
-                    Some(pos) => self.read_mem_elt(pos),
+                    Some(pos) => Ok(self.read_mem_elt(pos, num)),
                 }
             }
         }

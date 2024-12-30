@@ -32,7 +32,7 @@ pub mod day_7 {
             let phase = phase[i];
             match machines[i].execute_until_input(num)? {
                 StepIoResult::AwaitingInput(loc) => {
-                    machines[i].set_mem_elt(loc, phase as i32)?;
+                    machines[i].set_mem_elt(loc, phase as i32);
                 }
                 _ => {
                     panic!("unexpected IO result from machine {i}");
@@ -80,10 +80,10 @@ pub mod day_7 {
                                 progress_made = true;
                                 match input_to_first {
                                     None => {
-                                        machines[0].set_mem_elt(loc, 0)?;
+                                        machines[0].set_mem_elt(loc, 0);
                                     }
                                     Some(input) => {
-                                        machines[0].set_mem_elt(loc, input)?;
+                                        machines[0].set_mem_elt(loc, input);
                                         readiness[N - 1] = ExecutionState::Ready;
                                     }
                                 }
@@ -94,7 +94,7 @@ pub mod day_7 {
                             match readiness[i - 1] {
                                 ExecutionState::OutputPending(output) => {
                                     progress_made = true;
-                                    machines[i].set_mem_elt(loc, output)?;
+                                    machines[i].set_mem_elt(loc, output);
                                     readiness[i] = ExecutionState::Ready;
                                     readiness[i - 1] = ExecutionState::Ready;
                                 }
