@@ -19,7 +19,7 @@ pub mod day_2 {
 
         machine.execute_to_end(&mut std::iter::empty())?;
 
-        let result = machine.read_mem_elt(0);
+        let result = *machine.read_mem_elt(0).unwrap();
         Ok(result)
     }
 
@@ -39,7 +39,7 @@ pub mod day_2 {
                         machine.execute_to_end(&mut std::iter::empty()).ok()?;
                         // safety: on termination, program counter is on opcode 99,
                         // so there is an element in the array
-                        if machine.read_mem_elt(0) == target {
+                        if *machine.read_mem_elt(0).unwrap() == target {
                             Some((noun, verb))
                         } else {
                             None

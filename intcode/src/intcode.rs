@@ -153,17 +153,23 @@ impl<T> MachineState<T> {
             .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
         let arg_1 = self
             .read_param(self.pc + 1, mode_1)
-            .ok_or(MachineExecutionError::OutOfBounds)?;
+            .map_err(|()| MachineExecutionError::OutOfBounds)?
+            .map(|x| *x)
+            .unwrap_or(T::zero());
         let arg_2 = self
             .read_param(self.pc + 2, mode_2)
-            .ok_or(MachineExecutionError::OutOfBounds)?;
+            .map_err(|()| MachineExecutionError::OutOfBounds)?
+            .map(|x| *x)
+            .unwrap_or(T::zero());
 
-        let result_pos = self.read_mem_elt(self.pc + 3);
+        let result_pos = match self.read_mem_elt(self.pc + 3) {
+            None => 0,
+            Some(result_pos) => {
+                T::to_usize(*result_pos).ok_or(MachineExecutionError::OutOfBounds)?
+            }
+        };
 
-        self.set_mem_elt(
-            T::to_usize(result_pos).ok_or(MachineExecutionError::OutOfBounds)?,
-            process(arg_1, arg_2),
-        );
+        self.set_mem_elt(result_pos, process(arg_1, arg_2));
         self.pc += 4;
         Ok(StepResult::Stepped)
     }
@@ -172,8 +178,10 @@ impl<T> MachineState<T> {
     where
         T: Add<T, Output = T> + Mul<T, Output = T> + Copy + std::cmp::Ord + Num,
     {
-        let opcode = self.read_mem_elt(self.pc);
-        let opcode: usize = T::to_usize(opcode).ok_or(MachineExecutionError::OutOfBounds)?;
+        let opcode = match self.read_mem_elt(self.pc) {
+            None => 0,
+            Some(opcode) => T::to_usize(*opcode).ok_or(MachineExecutionError::OutOfBounds)?,
+        };
         match opcode % 100 {
             1_usize => self.process_binary_op(opcode, |a, b| a + b),
             2 => self.process_binary_op(opcode, |a, b| a * b),
@@ -181,8 +189,12 @@ impl<T> MachineState<T> {
                 if opcode != 3 {
                     return Err(MachineExecutionError::BadParameterMode(opcode));
                 }
-                let location = self.read_mem_elt(self.pc + 1);
-                let location = T::to_usize(location).ok_or(MachineExecutionError::OutOfBounds)?;
+                let location = match self.read_mem_elt(self.pc + 1) {
+                    None => 0,
+                    Some(location) => {
+                        T::to_usize(*location).ok_or(MachineExecutionError::OutOfBounds)?
+                    }
+                };
                 self.pc += 2;
                 Ok(StepResult::Io(StepIoResult::AwaitingInput(location)))
             }
@@ -194,14 +206,20 @@ impl<T> MachineState<T> {
                     .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
                 let to_output = match mode {
                     ParameterMode::Position => {
-                        let addr = T::to_usize(self.read_mem_elt(self.pc + 1))
-                            .ok_or(MachineExecutionError::OutOfBounds)?;
-                        self.read_mem_elt(addr)
+                        let addr = match self.read_mem_elt(self.pc + 1) {
+                            None => 0,
+                            Some(addr) => {
+                                T::to_usize(*addr).ok_or(MachineExecutionError::OutOfBounds)?
+                            }
+                        };
+                        self.read_mem_elt(addr).map(|x| *x)
                     }
-                    ParameterMode::Immediate => self.read_mem_elt(self.pc + 1),
+                    ParameterMode::Immediate => self.read_mem_elt(self.pc + 1).map(|x| *x),
                 };
                 self.pc += 2;
-                Ok(StepResult::Io(StepIoResult::Output(to_output)))
+                Ok(StepResult::Io(StepIoResult::Output(
+                    to_output.unwrap_or(T::zero()),
+                )))
             }
             5 => {
                 if opcode >= 10000 {
@@ -211,16 +229,25 @@ impl<T> MachineState<T> {
                     .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
                 let comparand = self
                     .read_param(self.pc + 1, mode_comparand)
-                    .ok_or(MachineExecutionError::OutOfBounds)?;
-                if comparand != T::zero() {
-                    let mode_target = ParameterMode::of_int((opcode / 1000) % 10)
-                        .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
-                    let target = self
-                        .read_param(self.pc + 2, mode_target)
-                        .ok_or(MachineExecutionError::OutOfBounds)?;
-                    self.pc = T::to_usize(target).ok_or(MachineExecutionError::OutOfBounds)?;
-                } else {
-                    self.pc += 3;
+                    .map_err(|()| MachineExecutionError::OutOfBounds)?;
+                match comparand {
+                    None => {
+                        self.pc += 3;
+                    }
+                    Some(comparand) => {
+                        if *comparand != T::zero() {
+                            let mode_target = ParameterMode::of_int((opcode / 1000) % 10)
+                                .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
+                            let target = self
+                                .read_param(self.pc + 2, mode_target)
+                                .map_err(|()| MachineExecutionError::OutOfBounds)?
+                                .map(|x| T::to_usize(*x).ok_or(MachineExecutionError::OutOfBounds))
+                                .unwrap_or(Ok(0))?;
+                            self.pc = target;
+                        } else {
+                            self.pc += 3;
+                        }
+                    }
                 }
                 Ok(StepResult::Stepped)
             }
@@ -230,16 +257,20 @@ impl<T> MachineState<T> {
                 }
                 let mode_comparand = ParameterMode::of_int((opcode / 100) % 10)
                     .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
-                let comparand = self
+                let comparand_zero = self
                     .read_param(self.pc + 1, mode_comparand)
-                    .ok_or(MachineExecutionError::OutOfBounds)?;
-                if comparand == T::zero() {
+                    .map_err(|()| MachineExecutionError::OutOfBounds)?
+                    .map(|x| *x == T::zero())
+                    .unwrap_or(true);
+                if comparand_zero {
                     let mode_target = ParameterMode::of_int((opcode / 1000) % 10)
                         .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
                     let target = self
                         .read_param(self.pc + 2, mode_target)
-                        .ok_or(MachineExecutionError::OutOfBounds)?;
-                    self.pc = T::to_usize(target).ok_or(MachineExecutionError::OutOfBounds)?;
+                        .map_err(|()| MachineExecutionError::OutOfBounds)?
+                        .map(|x| T::to_usize(*x).ok_or(MachineExecutionError::OutOfBounds))
+                        .unwrap_or(Ok(0))?;
+                    self.pc = target;
                 } else {
                     self.pc += 3;
                 }
@@ -318,30 +349,31 @@ impl<T> MachineState<T> {
         }
     }
 
-    pub fn read_mem_elt(&self, i: usize) -> T
-    where
-        T: Num + Copy,
-    {
+    // All outcomes are "success". A None result means the memory is not
+    // yet initialised (so is implicitly 0), and is outside the dense array storage.
+    pub fn read_mem_elt(&self, i: usize) -> Option<&T> {
         if i < self.memory.len() {
-            self.memory[i]
+            Some(&self.memory[i])
         } else {
-            match self.sparse_memory.get(&i) {
-                None => T::zero(),
-                Some(entry) => *entry,
-            }
+            self.sparse_memory.get(&i)
         }
     }
 
-    fn read_param(&self, i: usize, mode: ParameterMode) -> Option<T>
+    // Success outcome:
+    // A None result means the memory is not yet initialised, so is implicitly 0 (and is outside the dense array storage).
+    // Error outcome: we failed to convert the contents of a piece of memory to an address.
+    fn read_param(&self, i: usize, mode: ParameterMode) -> Result<Option<&T>, ()>
     where
         T: Copy + Num,
     {
         match mode {
-            ParameterMode::Immediate => Some(self.read_mem_elt(i)),
+            ParameterMode::Immediate => Ok(self.read_mem_elt(i)),
             ParameterMode::Position => {
-                let pos = self.read_mem_elt(i);
-                let pos = T::to_usize(pos);
-                pos.map(|x| self.read_mem_elt(x))
+                let pos = match self.read_mem_elt(i) {
+                    None => 0usize,
+                    Some(pos) => T::to_usize(*pos).ok_or(())?,
+                };
+                Ok(self.read_mem_elt(pos))
             }
         }
     }
