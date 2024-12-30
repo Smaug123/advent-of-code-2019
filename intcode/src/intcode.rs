@@ -33,6 +33,21 @@ pub mod num {
         }
     }
 
+    pub const fn i64() -> NumImpl<i64, impl Fn(i64) -> Option<usize>, impl Fn(i64) -> Option<i32>> {
+        NumImpl {
+            to_usize: |x| if x < 0 { None } else { Some(x as usize) },
+            to_i32: |x| {
+                if x < i32::MIN as i64 || x > i32::MAX as i64 {
+                    None
+                } else {
+                    Some(x as i32)
+                }
+            },
+            zero: 0,
+            one: 1,
+        }
+    }
+
     pub const fn u64() -> NumImpl<u64, impl Fn(u64) -> Option<usize>, impl Fn(u64) -> Option<i32>> {
         NumImpl {
             to_usize: |x| Some(x as usize),
@@ -174,10 +189,12 @@ impl<T> MachineState<T> {
         self.memory.extend(mem);
     }
 
+    // Pass the opcode so that we can work out the parameter modes.
+    // This is neater because we can throw the right error if you give us
+    // immediate-mode.
     fn process_binary_op<G, H, H2>(
         &mut self,
-        mode_1: ParameterMode,
-        mode_2: ParameterMode,
+        opcode: usize,
         process: G,
         num: &num::NumImpl<T, H, H2>,
     ) -> Result<StepResult<T>, MachineExecutionError>
@@ -187,15 +204,42 @@ impl<T> MachineState<T> {
         H: Fn(T) -> Option<usize>,
         H2: Fn(T) -> Option<i32>,
     {
+        if opcode >= 100000 {
+            return Err(MachineExecutionError::BadParameterMode(opcode));
+        }
+
+        let mode_1 = ParameterMode::of_int((opcode / 100) % 10)
+            .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
+        let mode_2 = ParameterMode::of_int((opcode / 1000) % 10)
+            .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
         let arg_1 = self.read_param(self.pc + 1, mode_1, num)?;
         let arg_2 = self.read_param(self.pc + 2, mode_2, num)?;
 
-        let result_pos = self.read_mem_elt(self.pc + 3, num);
+        let result_pos = match ParameterMode::of_int((opcode / 10000) % 10)
+            .ok_or(MachineExecutionError::BadParameterMode(opcode))?
+        {
+            ParameterMode::Relative => {
+                let offset = (num.to_i32)(self.read_mem_elt(self.pc + 3, num)).ok_or(
+                    MachineExecutionError::OutOfBounds(MemoryAccessError::Negative),
+                )?;
+                let target = self.relative_base + offset;
+                if target < 0 {
+                    return Err(MachineExecutionError::OutOfBounds(
+                        MemoryAccessError::Negative,
+                    ));
+                }
+                target as usize
+            }
+            ParameterMode::Position => (num.to_usize)(self.read_mem_elt(self.pc + 3, num))
+                .ok_or(MemoryAccessError::Negative)?,
+            ParameterMode::Immediate => {
+                return Err(MachineExecutionError::BadParameterMode(opcode))
+            }
+        };
 
-        self.set_mem_elt(
-            (num.to_usize)(result_pos).ok_or(MemoryAccessError::Negative)?,
-            process(arg_1, arg_2),
-        );
+        let result = process(arg_1, arg_2);
+
+        self.set_mem_elt(result_pos, result);
         self.pc += 4;
         Ok(StepResult::Stepped)
     }
@@ -214,32 +258,34 @@ impl<T> MachineState<T> {
             MemoryAccessError::Negative,
         ))?;
         match opcode % 100 {
-            1_usize => {
-                if opcode >= 10000 {
-                    return Err(MachineExecutionError::BadParameterMode(opcode));
-                }
-                let mode_1 = ParameterMode::of_int((opcode / 100) % 10)
-                    .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
-                let mode_2 = ParameterMode::of_int((opcode / 1000) % 10)
-                    .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
-                self.process_binary_op(mode_1, mode_2, |a, b| a + b, num)
-            }
-            2 => {
-                if opcode >= 10000 {
-                    return Err(MachineExecutionError::BadParameterMode(opcode));
-                }
-                let mode_1 = ParameterMode::of_int((opcode / 100) % 10)
-                    .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
-                let mode_2 = ParameterMode::of_int((opcode / 1000) % 10)
-                    .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
-                self.process_binary_op(mode_1, mode_2, |a, b| a * b, num)
-            }
+            1_usize => self.process_binary_op(opcode, |a, b| a + b, num),
+            2 => self.process_binary_op(opcode, |a, b| a * b, num),
             3 => {
-                if opcode != 3 {
+                if opcode >= 1000 {
                     return Err(MachineExecutionError::BadParameterMode(opcode));
                 }
-                let location = self.read_mem_elt(self.pc + 1, num);
-                let location = (num.to_usize)(location).ok_or(MemoryAccessError::Negative)?;
+                let mode = ParameterMode::of_int((opcode / 100) % 10)
+                    .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
+                let location = match mode {
+                    ParameterMode::Immediate => {
+                        return Err(MachineExecutionError::BadParameterMode(opcode));
+                    }
+                    ParameterMode::Position => {
+                        let location = self.read_mem_elt(self.pc + 1, num);
+                        (num.to_usize)(location).ok_or(MemoryAccessError::Negative)?
+                    }
+                    ParameterMode::Relative => {
+                        let offset = self.read_mem_elt(self.pc + 1, num);
+                        let target = self.relative_base
+                            + (num.to_i32)(offset).ok_or(MemoryAccessError::Overflow)?;
+                        if target < 0 {
+                            return Err(MachineExecutionError::OutOfBounds(
+                                MemoryAccessError::Negative,
+                            ));
+                        }
+                        target as usize
+                    }
+                };
                 self.pc += 2;
                 Ok(StepResult::Io(StepIoResult::AwaitingInput(location)))
             }
@@ -288,32 +334,12 @@ impl<T> MachineState<T> {
                 Ok(StepResult::Stepped)
             }
             7 => {
-                if opcode >= 100000 {
-                    return Err(MachineExecutionError::BadParameterMode(opcode));
-                }
-                let mode_1 = ParameterMode::of_int((opcode / 100) % 10)
-                    .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
-                let mode_2 = ParameterMode::of_int((opcode / 1000) % 10)
-                    .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
-                self.process_binary_op(
-                    mode_1,
-                    mode_2,
-                    |a, b| if a < b { num.one } else { num.zero },
-                    num,
-                )?;
+                self.process_binary_op(opcode, |a, b| if a < b { num.one } else { num.zero }, num)?;
                 Ok(StepResult::Stepped)
             }
             8 => {
-                if opcode >= 100000 {
-                    return Err(MachineExecutionError::BadParameterMode(opcode));
-                }
-                let mode_1 = ParameterMode::of_int((opcode / 100) % 10)
-                    .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
-                let mode_2 = ParameterMode::of_int((opcode / 1000) % 10)
-                    .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
                 self.process_binary_op(
-                    mode_1,
-                    mode_2,
+                    opcode,
                     |a, b| if a == b { num.one } else { num.zero },
                     num,
                 )?;
