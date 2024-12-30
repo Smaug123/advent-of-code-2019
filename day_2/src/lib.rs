@@ -1,5 +1,5 @@
 pub mod day_2 {
-    use intcode::intcode::{num, MachineExecutionError, MachineState};
+    use intcode::intcode::{MachineExecutionError, MachineState};
 
     pub fn input(s: &str) -> Vec<usize> {
         s.trim()
@@ -17,7 +17,7 @@ pub mod day_2 {
         machine.set_mem_elt(1, 12)?;
         machine.set_mem_elt(2, 2)?;
 
-        machine.execute_to_end(&mut std::iter::empty(), &num::usize())?;
+        machine.execute_to_end(&mut std::iter::empty())?;
 
         let result = machine.read_mem_elt(0)?;
         Ok(*result)
@@ -36,9 +36,7 @@ pub mod day_2 {
                         machine.reset(numbers.clone());
                         machine.set_mem_elt(1, noun).ok()?;
                         machine.set_mem_elt(2, verb).ok()?;
-                        machine
-                            .execute_to_end(&mut std::iter::empty(), &num::usize())
-                            .ok()?;
+                        machine.execute_to_end(&mut std::iter::empty()).ok()?;
                         // safety: on termination, program counter is on opcode 99,
                         // so there is an element in the array
                         if *machine.read_mem_elt(0).unwrap() == target {
