@@ -7,30 +7,41 @@ pub struct MachineState<T> {
     pc: usize,
 }
 
-pub mod num {
+pub trait Num {
+    fn zero() -> Self;
+    fn one() -> Self;
+    fn to_usize(self) -> Option<usize>;
+}
 
-    pub struct NumImpl<T, F>
-    where
-        F: Fn(T) -> Option<usize>,
-    {
-        pub to_usize: F,
-        pub zero: T,
-        pub one: T,
-    }
-    pub fn i32() -> NumImpl<i32, impl Fn(i32) -> Option<usize>> {
-        NumImpl {
-            to_usize: |x| if x < 0 { None } else { Some(x as usize) },
-            zero: 0,
-            one: 1,
-        }
+impl Num for i32 {
+    fn zero() -> Self {
+        0
     }
 
-    pub fn usize() -> NumImpl<usize, impl Fn(usize) -> Option<usize>> {
-        NumImpl {
-            to_usize: |x| Some(x),
-            zero: 0,
-            one: 1,
+    fn one() -> Self {
+        1
+    }
+
+    fn to_usize(self) -> Option<usize> {
+        if self < 0 {
+            None
+        } else {
+            Some(self as usize)
         }
+    }
+}
+
+impl Num for usize {
+    fn zero() -> Self {
+        0
+    }
+
+    fn one() -> Self {
+        1
+    }
+
+    fn to_usize(self) -> Option<usize> {
+        Some(self)
     }
 }
 
@@ -135,16 +146,14 @@ impl<T> MachineState<T> {
         self.memory.extend(mem);
     }
 
-    fn process_binary_op<G, H>(
+    fn process_binary_op<G>(
         &mut self,
         opcode: usize,
         process: G,
-        num: &num::NumImpl<T, H>,
     ) -> Result<StepResult<T>, MachineExecutionError>
     where
-        T: Copy,
+        T: Copy + Num,
         G: Fn(T, T) -> T,
-        H: Fn(T) -> Option<usize>,
     {
         if opcode >= 10000 {
             return Err(MachineExecutionError::BadParameterMode(opcode));
@@ -153,40 +162,36 @@ impl<T> MachineState<T> {
             .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
         let mode_2 = ParameterMode::of_int((opcode / 1000) % 10)
             .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
-        let arg_1 = *self.read_param(self.pc + 1, mode_1, &num.to_usize)?;
-        let arg_2 = *self.read_param(self.pc + 2, mode_2, &num.to_usize)?;
+        let arg_1 = *self.read_param(self.pc + 1, mode_1)?;
+        let arg_2 = *self.read_param(self.pc + 2, mode_2)?;
 
         let result_pos = *self.read_mem_elt(self.pc + 3)?;
 
         self.set_mem_elt(
-            (num.to_usize)(result_pos).ok_or(MemoryAccessError::Negative)?,
+            T::to_usize(result_pos).ok_or(MemoryAccessError::Negative)?,
             process(arg_1, arg_2),
         )?;
         self.pc += 4;
         Ok(StepResult::Stepped)
     }
 
-    pub fn one_step<G>(
-        &mut self,
-        num: &num::NumImpl<T, G>,
-    ) -> Result<StepResult<T>, MachineExecutionError>
+    pub fn one_step(&mut self) -> Result<StepResult<T>, MachineExecutionError>
     where
-        T: Add<T, Output = T> + Mul<T, Output = T> + Copy + std::cmp::Ord,
-        G: Fn(T) -> Option<usize>,
+        T: Add<T, Output = T> + Mul<T, Output = T> + Copy + std::cmp::Ord + Num,
     {
         let opcode = *self.read_mem_elt(self.pc)?;
-        let opcode: usize = (num.to_usize)(opcode).ok_or(MachineExecutionError::OutOfBounds(
+        let opcode: usize = T::to_usize(opcode).ok_or(MachineExecutionError::OutOfBounds(
             MemoryAccessError::Negative,
         ))?;
         match opcode % 100 {
-            1_usize => self.process_binary_op(opcode, |a, b| a + b, num),
-            2 => self.process_binary_op(opcode, |a, b| a * b, num),
+            1_usize => self.process_binary_op(opcode, |a, b| a + b),
+            2 => self.process_binary_op(opcode, |a, b| a * b),
             3 => {
                 if opcode != 3 {
                     return Err(MachineExecutionError::BadParameterMode(opcode));
                 }
                 let location = self.read_mem_elt(self.pc + 1)?;
-                let location = (num.to_usize)(*location).ok_or(MemoryAccessError::Negative)?;
+                let location = T::to_usize(*location).ok_or(MemoryAccessError::Negative)?;
                 self.pc += 2;
                 Ok(StepResult::Io(StepIoResult::AwaitingInput(location)))
             }
@@ -198,7 +203,7 @@ impl<T> MachineState<T> {
                     .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
                 let to_output = match mode {
                     ParameterMode::Position => {
-                        let addr = (num.to_usize)(*self.read_mem_elt(self.pc + 1)?)
+                        let addr = T::to_usize(*self.read_mem_elt(self.pc + 1)?)
                             .ok_or(MemoryAccessError::Negative)?;
                         *self.read_mem_elt(addr)?
                     }
@@ -213,12 +218,12 @@ impl<T> MachineState<T> {
                 }
                 let mode_comparand = ParameterMode::of_int((opcode / 100) % 10)
                     .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
-                let comparand = *self.read_param(self.pc + 1, mode_comparand, &num.to_usize)?;
-                if comparand != num.zero {
+                let comparand = *self.read_param(self.pc + 1, mode_comparand)?;
+                if comparand != T::zero() {
                     let mode_target = ParameterMode::of_int((opcode / 1000) % 10)
                         .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
-                    let target = *self.read_param(self.pc + 2, mode_target, &num.to_usize)?;
-                    self.pc = (num.to_usize)(target).ok_or(MemoryAccessError::Negative)?;
+                    let target = *self.read_param(self.pc + 2, mode_target)?;
+                    self.pc = T::to_usize(target).ok_or(MemoryAccessError::Negative)?;
                 } else {
                     self.pc += 3;
                 }
@@ -230,27 +235,23 @@ impl<T> MachineState<T> {
                 }
                 let mode_comparand = ParameterMode::of_int((opcode / 100) % 10)
                     .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
-                let comparand = *self.read_param(self.pc + 1, mode_comparand, &num.to_usize)?;
-                if comparand == num.zero {
+                let comparand = *self.read_param(self.pc + 1, mode_comparand)?;
+                if comparand == T::zero() {
                     let mode_target = ParameterMode::of_int((opcode / 1000) % 10)
                         .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
-                    let target = *self.read_param(self.pc + 2, mode_target, &num.to_usize)?;
-                    self.pc = (num.to_usize)(target).ok_or(MemoryAccessError::Negative)?;
+                    let target = *self.read_param(self.pc + 2, mode_target)?;
+                    self.pc = T::to_usize(target).ok_or(MemoryAccessError::Negative)?;
                 } else {
                     self.pc += 3;
                 }
                 Ok(StepResult::Stepped)
             }
             7 => {
-                self.process_binary_op(opcode, |a, b| if a < b { num.one } else { num.zero }, num)?;
+                self.process_binary_op(opcode, |a, b| if a < b { T::one() } else { T::zero() })?;
                 Ok(StepResult::Stepped)
             }
             8 => {
-                self.process_binary_op(
-                    opcode,
-                    |a, b| if a == b { num.one } else { num.zero },
-                    num,
-                )?;
+                self.process_binary_op(opcode, |a, b| if a == b { T::one() } else { T::zero() })?;
                 Ok(StepResult::Stepped)
             }
             99 => {
@@ -263,16 +264,12 @@ impl<T> MachineState<T> {
         }
     }
 
-    pub fn execute_until_input<G>(
-        &mut self,
-        num: &num::NumImpl<T, G>,
-    ) -> Result<StepIoResult<T>, MachineExecutionError>
+    pub fn execute_until_input(&mut self) -> Result<StepIoResult<T>, MachineExecutionError>
     where
-        T: Add<T, Output = T> + Mul<T, Output = T> + Copy + Ord,
-        G: Fn(T) -> Option<usize>,
+        T: Add<T, Output = T> + Mul<T, Output = T> + Copy + Ord + Num,
     {
         loop {
-            match self.one_step(num)? {
+            match self.one_step()? {
                 StepResult::Io(res) => {
                     return Ok(res);
                 }
@@ -281,19 +278,14 @@ impl<T> MachineState<T> {
         }
     }
 
-    pub fn execute_to_end<G, I>(
-        &mut self,
-        get_input: &mut I,
-        num: &num::NumImpl<T, G>,
-    ) -> Result<Vec<T>, MachineExecutionError>
+    pub fn execute_to_end<I>(&mut self, get_input: &mut I) -> Result<Vec<T>, MachineExecutionError>
     where
-        T: Add<T, Output = T> + Mul<T, Output = T> + Copy + Ord,
+        T: Add<T, Output = T> + Mul<T, Output = T> + Copy + Ord + Num,
         I: Iterator<Item = T>,
-        G: Fn(T) -> Option<usize>,
     {
         let mut outputs = vec![];
         loop {
-            match self.execute_until_input(num)? {
+            match self.execute_until_input()? {
                 StepIoResult::Terminated => {
                     return Ok(outputs);
                 }
@@ -344,21 +336,15 @@ impl<T> MachineState<T> {
         }
     }
 
-    fn read_param<G>(
-        &self,
-        i: usize,
-        mode: ParameterMode,
-        to_usize: &G,
-    ) -> Result<&T, MemoryAccessError>
+    fn read_param(&self, i: usize, mode: ParameterMode) -> Result<&T, MemoryAccessError>
     where
-        T: Copy,
-        G: Fn(T) -> Option<usize>,
+        T: Copy + Num,
     {
         match mode {
             ParameterMode::Immediate => self.read_mem_elt(i),
             ParameterMode::Position => {
                 let pos = self.read_mem_elt(i)?;
-                let pos = to_usize(*pos);
+                let pos = T::to_usize(*pos);
                 match pos {
                     None => Err(MemoryAccessError::Negative),
                     Some(pos) => self.read_mem_elt(pos),
@@ -372,19 +358,17 @@ impl<T> MachineState<T> {
 mod tests {
     use super::*;
 
-    fn assert_machines_eq<T, I, G, const N: usize>(
+    fn assert_machines_eq<T, I, const N: usize>(
         initial: &[T; N],
         expected_memory: Option<&[T]>,
         input: &mut I,
         expected_output: &[T],
-        num: &num::NumImpl<T, G>,
     ) where
-        T: Add<T, Output = T> + Mul<T, Output = T> + Copy + Ord,
+        T: Add<T, Output = T> + Mul<T, Output = T> + Copy + Ord + Num,
         I: Iterator<Item = T>,
-        G: Fn(T) -> Option<usize>,
     {
         let mut machine: MachineState<T> = MachineState::<T>::new_with_memory(initial);
-        let output = machine.execute_to_end(input, num).unwrap();
+        let output = machine.execute_to_end(input).unwrap();
         match expected_memory {
             None => {}
             Some(expected_memory) => {
@@ -401,7 +385,6 @@ mod tests {
             Some(&[3500, 9, 10, 70, 2, 3, 11, 0, 99, 30, 40, 50]),
             &mut std::iter::empty(),
             &[],
-            &num::usize(),
         );
     }
 
@@ -412,7 +395,6 @@ mod tests {
             Some(&[2, 3, 0, 6, 99]),
             &mut std::iter::empty(),
             &[],
-            &num::usize(),
         );
     }
 
@@ -423,7 +405,6 @@ mod tests {
             Some(&[2, 4, 4, 5, 99, 9801]),
             &mut std::iter::empty(),
             &[],
-            &num::usize(),
         );
     }
 
@@ -434,45 +415,44 @@ mod tests {
             Some(&[30, 1, 1, 4, 2, 5, 6, 0, 99]),
             &mut std::iter::empty(),
             &[],
-            &num::usize(),
         );
     }
 
     #[test]
     fn day_5_1() {
         let program = [3, 9, 8, 9, 10, 9, 4, 9, 99, -1, 8];
-        assert_machines_eq(&program, None, &mut std::iter::once(8), &[1], &num::i32());
-        assert_machines_eq(&program, None, &mut std::iter::once(7), &[0], &num::i32());
+        assert_machines_eq(&program, None, &mut std::iter::once(8), &[1]);
+        assert_machines_eq(&program, None, &mut std::iter::once(7), &[0]);
     }
 
     #[test]
     fn day_5_2() {
         let program = [3, 9, 7, 9, 10, 9, 4, 9, 99, -1, 8];
-        assert_machines_eq(&program, None, &mut std::iter::once(8), &[0], &num::i32());
-        assert_machines_eq(&program, None, &mut std::iter::once(7), &[1], &num::i32());
-        assert_machines_eq(&program, None, &mut std::iter::once(9), &[0], &num::i32());
+        assert_machines_eq(&program, None, &mut std::iter::once(8), &[0]);
+        assert_machines_eq(&program, None, &mut std::iter::once(7), &[1]);
+        assert_machines_eq(&program, None, &mut std::iter::once(9), &[0]);
     }
 
     #[test]
     fn day_5_3() {
         let program = [3, 3, 1108, -1, 8, 3, 4, 3, 99];
-        assert_machines_eq(&program, None, &mut std::iter::once(8), &[1], &num::i32());
-        assert_machines_eq(&program, None, &mut std::iter::once(7), &[0], &num::i32());
+        assert_machines_eq(&program, None, &mut std::iter::once(8), &[1]);
+        assert_machines_eq(&program, None, &mut std::iter::once(7), &[0]);
     }
 
     #[test]
     fn day_5_4() {
         let program = [3, 3, 1107, -1, 8, 3, 4, 3, 99];
-        assert_machines_eq(&program, None, &mut std::iter::once(8), &[0], &num::i32());
-        assert_machines_eq(&program, None, &mut std::iter::once(7), &[1], &num::i32());
-        assert_machines_eq(&program, None, &mut std::iter::once(9), &[0], &num::i32());
+        assert_machines_eq(&program, None, &mut std::iter::once(8), &[0]);
+        assert_machines_eq(&program, None, &mut std::iter::once(7), &[1]);
+        assert_machines_eq(&program, None, &mut std::iter::once(9), &[0]);
     }
 
     #[test]
     fn day_5_6() {
         let program = [3, 3, 1105, -1, 9, 1101, 0, 0, 12, 4, 12, 99, 1];
-        assert_machines_eq(&program, None, &mut std::iter::once(0), &[0], &num::i32());
-        assert_machines_eq(&program, None, &mut std::iter::once(3), &[1], &num::i32());
+        assert_machines_eq(&program, None, &mut std::iter::once(0), &[0]);
+        assert_machines_eq(&program, None, &mut std::iter::once(3), &[1]);
     }
 
     #[test]
@@ -482,20 +462,8 @@ mod tests {
             0, 1002, 21, 125, 20, 4, 20, 1105, 1, 46, 104, 999, 1105, 1, 46, 1101, 1000, 1, 20, 4,
             20, 1105, 1, 46, 98, 99,
         ];
-        assert_machines_eq(&program, None, &mut std::iter::once(7), &[999], &num::i32());
-        assert_machines_eq(
-            &program,
-            None,
-            &mut std::iter::once(8),
-            &[1000],
-            &num::i32(),
-        );
-        assert_machines_eq(
-            &program,
-            None,
-            &mut std::iter::once(9),
-            &[1001],
-            &num::i32(),
-        );
+        assert_machines_eq(&program, None, &mut std::iter::once(7), &[999]);
+        assert_machines_eq(&program, None, &mut std::iter::once(8), &[1000]);
+        assert_machines_eq(&program, None, &mut std::iter::once(9), &[1001]);
     }
 }

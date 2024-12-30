@@ -1,5 +1,4 @@
 pub mod day_5 {
-    use intcode::intcode::num;
     use intcode::intcode::{MachineExecutionError, MachineState};
 
     pub fn input(s: &str) -> Vec<i32> {
@@ -15,7 +14,7 @@ pub mod day_5 {
         T: Clone,
     {
         let mut machine = MachineState::new_with_memory(numbers);
-        let outputs = machine.execute_to_end(&mut std::iter::once(1), &num::i32())?;
+        let outputs = machine.execute_to_end(&mut std::iter::once(1))?;
         let mut outputs_iter = outputs.iter().rev();
         let ans = *outputs_iter.next().unwrap();
         for &output in outputs_iter {
@@ -33,7 +32,7 @@ pub mod day_5 {
         T: Clone,
     {
         let mut machine = MachineState::new_with_memory(numbers);
-        let outputs = machine.execute_to_end(&mut std::iter::once(5), &num::i32())?;
+        let outputs = machine.execute_to_end(&mut std::iter::once(5))?;
         if outputs.len() != 1 {
             panic!("bad len {}", outputs.len())
         }
