@@ -137,23 +137,29 @@ impl<T> MachineState<T> {
 
     fn process_binary_op<G, H>(
         &mut self,
-        mode_1: ParameterMode,
-        mode_2: ParameterMode,
+        opcode: usize,
         process: G,
-        to_usize: &H,
+        num: &num::NumImpl<T, H>,
     ) -> Result<StepResult<T>, MachineExecutionError>
     where
         T: Copy,
         G: Fn(T, T) -> T,
         H: Fn(T) -> Option<usize>,
     {
-        let arg_1 = *self.read_param(self.pc + 1, mode_1, to_usize)?;
-        let arg_2 = *self.read_param(self.pc + 2, mode_2, to_usize)?;
+        if opcode >= 10000 {
+            return Err(MachineExecutionError::BadParameterMode(opcode));
+        }
+        let mode_1 = ParameterMode::of_int((opcode / 100) % 10)
+            .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
+        let mode_2 = ParameterMode::of_int((opcode / 1000) % 10)
+            .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
+        let arg_1 = *self.read_param(self.pc + 1, mode_1, &num.to_usize)?;
+        let arg_2 = *self.read_param(self.pc + 2, mode_2, &num.to_usize)?;
 
         let result_pos = *self.read_mem_elt(self.pc + 3)?;
 
         self.set_mem_elt(
-            to_usize(result_pos).ok_or(MemoryAccessError::Negative)?,
+            (num.to_usize)(result_pos).ok_or(MemoryAccessError::Negative)?,
             process(arg_1, arg_2),
         )?;
         self.pc += 4;
@@ -173,26 +179,8 @@ impl<T> MachineState<T> {
             MemoryAccessError::Negative,
         ))?;
         match opcode % 100 {
-            1_usize => {
-                if opcode >= 10000 {
-                    return Err(MachineExecutionError::BadParameterMode(opcode));
-                }
-                let mode_1 = ParameterMode::of_int((opcode / 100) % 10)
-                    .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
-                let mode_2 = ParameterMode::of_int((opcode / 1000) % 10)
-                    .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
-                self.process_binary_op(mode_1, mode_2, |a, b| a + b, &num.to_usize)
-            }
-            2 => {
-                if opcode >= 10000 {
-                    return Err(MachineExecutionError::BadParameterMode(opcode));
-                }
-                let mode_1 = ParameterMode::of_int((opcode / 100) % 10)
-                    .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
-                let mode_2 = ParameterMode::of_int((opcode / 1000) % 10)
-                    .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
-                self.process_binary_op(mode_1, mode_2, |a, b| a * b, &num.to_usize)
-            }
+            1_usize => self.process_binary_op(opcode, |a, b| a + b, num),
+            2 => self.process_binary_op(opcode, |a, b| a * b, num),
             3 => {
                 if opcode != 3 {
                     return Err(MachineExecutionError::BadParameterMode(opcode));
@@ -254,34 +242,14 @@ impl<T> MachineState<T> {
                 Ok(StepResult::Stepped)
             }
             7 => {
-                if opcode >= 100000 {
-                    return Err(MachineExecutionError::BadParameterMode(opcode));
-                }
-                let mode_1 = ParameterMode::of_int((opcode / 100) % 10)
-                    .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
-                let mode_2 = ParameterMode::of_int((opcode / 1000) % 10)
-                    .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
-                self.process_binary_op(
-                    mode_1,
-                    mode_2,
-                    |a, b| if a < b { num.one } else { num.zero },
-                    &num.to_usize,
-                )?;
+                self.process_binary_op(opcode, |a, b| if a < b { num.one } else { num.zero }, num)?;
                 Ok(StepResult::Stepped)
             }
             8 => {
-                if opcode >= 100000 {
-                    return Err(MachineExecutionError::BadParameterMode(opcode));
-                }
-                let mode_1 = ParameterMode::of_int((opcode / 100) % 10)
-                    .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
-                let mode_2 = ParameterMode::of_int((opcode / 1000) % 10)
-                    .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
                 self.process_binary_op(
-                    mode_1,
-                    mode_2,
+                    opcode,
                     |a, b| if a == b { num.one } else { num.zero },
-                    &num.to_usize,
+                    num,
                 )?;
                 Ok(StepResult::Stepped)
             }
