@@ -1,9 +1,13 @@
-use std::ops::{Add, Mul};
+use std::{
+    collections::HashMap,
+    ops::{Add, Mul},
+};
 use thiserror::Error;
 
 #[derive(Clone)]
 pub struct MachineState<T> {
     memory: Vec<T>,
+    sparse_memory: HashMap<usize, T>,
     pc: usize,
     relative_base: i32,
 }
@@ -162,6 +166,7 @@ impl<T> MachineState<T> {
     pub fn new() -> MachineState<T> {
         MachineState {
             memory: vec![],
+            sparse_memory: HashMap::new(),
             pc: 0,
             relative_base: 0,
         }
@@ -174,6 +179,7 @@ impl<T> MachineState<T> {
     {
         MachineState {
             memory: mem.clone().into_iter().collect(),
+            sparse_memory: HashMap::new(),
             pc: 0,
             relative_base: 0,
         }
@@ -186,6 +192,7 @@ impl<T> MachineState<T> {
         self.pc = 0;
         self.memory.clear();
         self.memory.extend(mem);
+        self.sparse_memory.clear();
     }
 
     fn consume_args_2(&self, opcode: usize) -> Result<(T, T), MachineExecutionError>
@@ -199,8 +206,8 @@ impl<T> MachineState<T> {
             .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
         let mode_2 = ParameterMode::of_int((opcode / 1000) % 10)
             .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
-        let arg1 = *self.read_param(self.pc + 1, mode_1)?;
-        let arg2 = *self.read_param(self.pc + 2, mode_2)?;
+        let arg1 = self.read_param(self.pc + 1, mode_1)?;
+        let arg2 = self.read_param(self.pc + 2, mode_2)?;
         Ok((arg1, arg2))
     }
 
@@ -213,7 +220,7 @@ impl<T> MachineState<T> {
         }
         let mode = ParameterMode::of_int((opcode / 100) % 10)
             .ok_or(MachineExecutionError::BadParameterMode(opcode))?;
-        let to_output = *self.read_param(self.pc + 1, mode)?;
+        let to_output = self.read_param(self.pc + 1, mode)?;
         Ok(to_output)
     }
 
@@ -237,10 +244,10 @@ impl<T> MachineState<T> {
             .ok_or(MachineExecutionError::BadParameterMode(opcode))?
         {
             ParameterMode::Position => {
-                T::to_usize(*self.read_mem_elt(self.pc + 3)?).ok_or(MemoryAccessError::Negative)?
+                T::to_usize(self.read_mem_elt(self.pc + 3)).ok_or(MemoryAccessError::Negative)?
             }
             ParameterMode::Relative => {
-                let offset = T::to_i32(*self.read_mem_elt(self.pc + 3)?).ok_or(
+                let offset = T::to_i32(self.read_mem_elt(self.pc + 3)).ok_or(
                     MachineExecutionError::OutOfBounds(MemoryAccessError::Negative),
                 )?;
                 let target = self.relative_base + offset;
@@ -255,10 +262,10 @@ impl<T> MachineState<T> {
                 return Err(MachineExecutionError::BadParameterMode(opcode))
             }
         };
-        let arg1 = *self.read_param(self.pc + 1, mode_1)?;
-        let arg2 = *self.read_param(self.pc + 2, mode_2)?;
+        let arg1 = self.read_param(self.pc + 1, mode_1)?;
+        let arg2 = self.read_param(self.pc + 2, mode_2)?;
         let result = f(arg1, arg2);
-        self.set_mem_elt(result_pos, result)?;
+        self.set_mem_elt(result_pos, result);
         self.pc += 4;
         Ok(StepResult::Stepped)
     }
@@ -267,7 +274,7 @@ impl<T> MachineState<T> {
     where
         T: Add<T, Output = T> + Mul<T, Output = T> + Copy + std::cmp::Ord + Num,
     {
-        let opcode = *self.read_mem_elt(self.pc)?;
+        let opcode = self.read_mem_elt(self.pc);
         let opcode: usize = T::to_usize(opcode).ok_or(MachineExecutionError::OutOfBounds(
             MemoryAccessError::Negative,
         ))?;
@@ -278,8 +285,8 @@ impl<T> MachineState<T> {
                 if opcode != 3 {
                     return Err(MachineExecutionError::BadParameterMode(opcode));
                 }
-                let location = self.read_mem_elt(self.pc + 1)?;
-                let location = T::to_usize(*location).ok_or(MemoryAccessError::Negative)?;
+                let location = self.read_mem_elt(self.pc + 1);
+                let location = T::to_usize(location).ok_or(MemoryAccessError::Negative)?;
                 self.pc += 2;
                 Ok(StepResult::Io(StepIoResult::AwaitingInput(location)))
             }
@@ -358,7 +365,7 @@ impl<T> MachineState<T> {
                         return Err(MachineExecutionError::NoInput);
                     }
                     Some(input) => {
-                        self.set_mem_elt(target_location, input)?;
+                        self.set_mem_elt(target_location, input);
                     }
                 },
             }
@@ -372,51 +379,62 @@ impl<T> MachineState<T> {
         self.memory.iter().copied()
     }
 
-    pub fn set_mem_elt(&mut self, i: usize, new_val: T) -> Result<(), MemoryAccessError> {
+    #[cold]
+    fn set_mem_elt_sparse(&mut self, i: usize, new_val: T) {
+        self.sparse_memory.insert(i, new_val);
+    }
+
+    pub fn set_mem_elt(&mut self, i: usize, new_val: T) {
         if i < self.memory.len() {
             self.memory[i] = new_val;
-            Ok(())
         } else {
-            Err(MemoryAccessError::TooFar(MemoryAccessTooFarError {
-                pos: i,
-                len: self.memory.len(),
-                is_write: true,
-            }))
+            self.set_mem_elt_sparse(i, new_val);
         }
     }
 
-    pub fn read_mem_elt(&self, i: usize) -> Result<&T, MemoryAccessError> {
+    #[cold]
+    fn read_sparse_mem(&self, i: usize) -> T
+    where
+        T: Clone + Num,
+    {
+        match self.sparse_memory.get(&i) {
+            None => T::zero(),
+            Some(v) => v.clone(),
+        }
+    }
+
+    #[inline]
+    pub fn read_mem_elt(&self, i: usize) -> T
+    where
+        T: Clone + Num,
+    {
         if i < self.memory.len() {
-            Ok(&self.memory[i])
+            self.memory[i].clone()
         } else {
-            Err(MemoryAccessError::TooFar(MemoryAccessTooFarError {
-                pos: i,
-                len: self.memory.len(),
-                is_write: false,
-            }))
+            self.read_sparse_mem(i)
         }
     }
 
-    fn read_param(&self, i: usize, mode: ParameterMode) -> Result<&T, MemoryAccessError>
+    fn read_param(&self, i: usize, mode: ParameterMode) -> Result<T, MemoryAccessError>
     where
         T: Copy + Num,
     {
         match mode {
-            ParameterMode::Immediate => self.read_mem_elt(i),
+            ParameterMode::Immediate => Ok(self.read_mem_elt(i)),
             ParameterMode::Position => {
-                let pos = self.read_mem_elt(i)?;
-                let pos = T::to_usize(*pos);
+                let pos = self.read_mem_elt(i);
+                let pos = T::to_usize(pos);
                 match pos {
                     None => Err(MemoryAccessError::Negative),
-                    Some(pos) => self.read_mem_elt(pos),
+                    Some(pos) => Ok(self.read_mem_elt(pos)),
                 }
             }
             ParameterMode::Relative => {
-                let offset = *self.read_mem_elt(i)?;
+                let offset = self.read_mem_elt(i);
                 let target =
                     self.relative_base + T::to_i32(offset).ok_or(MemoryAccessError::Overflow)?;
                 if target >= 0 {
-                    self.read_mem_elt(target as usize)
+                    Ok(self.read_mem_elt(target as usize))
                 } else {
                     Err(MemoryAccessError::Negative)
                 }
@@ -538,18 +556,13 @@ mod tests {
         assert_machines_eq(&program, None, &mut std::iter::once(9), &[1001]);
     }
 
-    //#[test]
-    //fn day_9_1() {
-    //    let program = [
-    //        109, 1, 204, -1, 1001, 100, 1, 100, 1008, 100, 16, 101, 1006, 101, 0, 99,
-    //    ];
-    //    assert_machines_eq(
-    //        &program,
-    //        None,
-    //        &mut std::iter::empty(),
-    //        &program,
-    //    );
-    //}
+    #[test]
+    fn day_9_1() {
+        let program = [
+            109, 1, 204, -1, 1001, 100, 1, 100, 1008, 100, 16, 101, 1006, 101, 0, 99,
+        ];
+        assert_machines_eq(&program, None, &mut std::iter::empty(), &program);
+    }
 
     #[test]
     fn day_9_2() {
