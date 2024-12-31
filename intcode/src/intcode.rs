@@ -146,7 +146,6 @@ impl<T> MachineState<T> {
         self.memory.extend(mem);
     }
 
-    #[inline]
     fn consume_args_2(&self, opcode: usize) -> Result<(T, T), MachineExecutionError>
     where
         T: Copy + Num,
