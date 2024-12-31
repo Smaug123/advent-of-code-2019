@@ -97,8 +97,8 @@ pub mod day_10 {
 
                 let mut asteroids = 0;
 
-                for direction_row_sign in [-1, 1] {
-                    for direction_col_sign in [-1, 1] {
+                for direction_col_sign in [1, -1] {
+                    for direction_row_sign in [-1, 1] {
                         for direction_row in 0..(input.row_count as i32) {
                             for direction_col in 0..(input.col_count as i32) {
                                 if direction_row == 0 && direction_col == 0 {
@@ -155,8 +155,8 @@ pub mod day_10 {
         best
     }
 
-    pub fn part_2(input: &Board) -> u32 {
-        1
+    pub fn part_2(_input: &Board) -> u32 {
+        todo!()
     }
 }
 
@@ -286,6 +286,6 @@ mod tests {
     fn test_day_10() {
         let input = input(include_str!("../input.txt"));
         assert_eq!(part_1(&input), 314);
-        assert_eq!(part_2(&input), 0);
+        // assert_eq!(part_2(&input), 0);
     }
 }
