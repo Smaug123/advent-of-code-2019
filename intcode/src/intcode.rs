@@ -146,6 +146,7 @@ impl<T> MachineState<T> {
         self.memory.extend(mem);
     }
 
+    #[inline]
     fn consume_args_2(&self, opcode: usize) -> Result<(T, T), MachineExecutionError>
     where
         T: Copy + Num,
@@ -175,9 +176,14 @@ impl<T> MachineState<T> {
         Ok(to_output)
     }
 
-    fn consume_args_2_dest(&self, opcode: usize) -> Result<(T, T, usize), MachineExecutionError>
+    fn transform_to_dest<F>(
+        &mut self,
+        opcode: usize,
+        f: F,
+    ) -> Result<StepResult<T>, MachineExecutionError>
     where
         T: Copy + Num,
+        F: Fn(T, T) -> T,
     {
         if opcode >= 100000 {
             return Err(MachineExecutionError::BadParameterMode(opcode));
@@ -198,7 +204,10 @@ impl<T> MachineState<T> {
         };
         let arg1 = *self.read_param(self.pc + 1, mode_1)?;
         let arg2 = *self.read_param(self.pc + 2, mode_2)?;
-        Ok((arg1, arg2, result_pos))
+        let result = f(arg1, arg2);
+        self.set_mem_elt(result_pos, result)?;
+        self.pc += 4;
+        Ok(StepResult::Stepped)
     }
 
     pub fn one_step(&mut self) -> Result<StepResult<T>, MachineExecutionError>
@@ -210,18 +219,8 @@ impl<T> MachineState<T> {
             MemoryAccessError::Negative,
         ))?;
         match opcode % 100 {
-            1_usize => {
-                let (a, b, result_slot) = self.consume_args_2_dest(opcode)?;
-                self.set_mem_elt(result_slot, a + b)?;
-                self.pc += 4;
-                Ok(StepResult::Stepped)
-            }
-            2 => {
-                let (a, b, result_slot) = self.consume_args_2_dest(opcode)?;
-                self.set_mem_elt(result_slot, a * b)?;
-                self.pc += 4;
-                Ok(StepResult::Stepped)
-            }
+            1_usize => self.transform_to_dest(opcode, |a, b| a + b),
+            2 => self.transform_to_dest(opcode, |a, b| a * b),
             3 => {
                 if opcode != 3 {
                     return Err(MachineExecutionError::BadParameterMode(opcode));
@@ -254,18 +253,8 @@ impl<T> MachineState<T> {
                 }
                 Ok(StepResult::Stepped)
             }
-            7 => {
-                let (a, b, target) = self.consume_args_2_dest(opcode)?;
-                self.set_mem_elt(target, if a < b { T::one() } else { T::zero() })?;
-                self.pc += 4;
-                Ok(StepResult::Stepped)
-            }
-            8 => {
-                let (a, b, target) = self.consume_args_2_dest(opcode)?;
-                self.set_mem_elt(target, if a == b { T::one() } else { T::zero() })?;
-                self.pc += 4;
-                Ok(StepResult::Stepped)
-            }
+            7 => self.transform_to_dest(opcode, |a, b| if a < b { T::one() } else { T::zero() }),
+            8 => self.transform_to_dest(opcode, |a, b| if a == b { T::one() } else { T::zero() }),
             99 => {
                 if opcode != 99 {
                     return Err(MachineExecutionError::BadParameterMode(opcode));
