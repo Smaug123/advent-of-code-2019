@@ -5,12 +5,14 @@ use thiserror::Error;
 pub struct MachineState<T> {
     memory: Vec<T>,
     pc: usize,
+    relative_base: i32,
 }
 
 pub trait Num {
     fn zero() -> Self;
     fn one() -> Self;
     fn to_usize(self) -> Option<usize>;
+    fn to_i32(self) -> Option<i32>;
 }
 
 impl Num for i32 {
@@ -29,6 +31,32 @@ impl Num for i32 {
             Some(self as usize)
         }
     }
+
+    fn to_i32(self) -> Option<i32> {
+        Some(self)
+    }
+}
+
+impl Num for u64 {
+    fn zero() -> Self {
+        0
+    }
+
+    fn one() -> Self {
+        1
+    }
+
+    fn to_usize(self) -> Option<usize> {
+        Some(self as usize)
+    }
+
+    fn to_i32(self) -> Option<i32> {
+        if self <= (i32::MAX as u64) {
+            Some(self as i32)
+        } else {
+            None
+        }
+    }
 }
 
 impl Num for usize {
@@ -42,6 +70,14 @@ impl Num for usize {
 
     fn to_usize(self) -> Option<usize> {
         Some(self)
+    }
+
+    fn to_i32(self) -> Option<i32> {
+        if self <= (i32::MAX as usize) {
+            Some(self as i32)
+        } else {
+            None
+        }
     }
 }
 
@@ -61,6 +97,8 @@ pub enum MemoryAccessError {
     TooFar(#[from] MemoryAccessTooFarError),
     #[error("attempted to access negative memory index")]
     Negative,
+    #[error("attempted to apply memory index offset too big to store")]
+    Overflow,
 }
 
 #[derive(Error, Debug)]
@@ -100,6 +138,7 @@ impl<T> From<StepIoResult<T>> for StepResult<T> {
 enum ParameterMode {
     Immediate,
     Position,
+    Relative,
 }
 
 impl ParameterMode {
@@ -107,6 +146,7 @@ impl ParameterMode {
         match u {
             0 => Some(ParameterMode::Position),
             1 => Some(ParameterMode::Immediate),
+            2 => Some(ParameterMode::Relative),
             _ => None,
         }
     }
@@ -123,6 +163,7 @@ impl<T> MachineState<T> {
         MachineState {
             memory: vec![],
             pc: 0,
+            relative_base: 0,
         }
     }
 
@@ -134,6 +175,7 @@ impl<T> MachineState<T> {
         MachineState {
             memory: mem.clone().into_iter().collect(),
             pc: 0,
+            relative_base: 0,
         }
     }
 
@@ -197,6 +239,18 @@ impl<T> MachineState<T> {
             ParameterMode::Position => {
                 T::to_usize(*self.read_mem_elt(self.pc + 3)?).ok_or(MemoryAccessError::Negative)?
             }
+            ParameterMode::Relative => {
+                let offset = T::to_i32(*self.read_mem_elt(self.pc + 3)?).ok_or(
+                    MachineExecutionError::OutOfBounds(MemoryAccessError::Negative),
+                )?;
+                let target = self.relative_base + offset;
+                if target < 0 {
+                    return Err(MachineExecutionError::OutOfBounds(
+                        MemoryAccessError::Negative,
+                    ));
+                }
+                target as usize
+            }
             ParameterMode::Immediate => {
                 return Err(MachineExecutionError::BadParameterMode(opcode))
             }
@@ -254,6 +308,13 @@ impl<T> MachineState<T> {
             }
             7 => self.transform_to_dest(opcode, |a, b| if a < b { T::one() } else { T::zero() }),
             8 => self.transform_to_dest(opcode, |a, b| if a == b { T::one() } else { T::zero() }),
+            9 => {
+                let arg = self.consume_args_1(opcode)?;
+                let increment = T::to_i32(arg).ok_or(MemoryAccessError::Overflow)?;
+                self.relative_base += increment;
+                self.pc += 2;
+                Ok(StepResult::Stepped)
+            }
             99 => {
                 if opcode != 99 {
                     return Err(MachineExecutionError::BadParameterMode(opcode));
@@ -348,6 +409,16 @@ impl<T> MachineState<T> {
                 match pos {
                     None => Err(MemoryAccessError::Negative),
                     Some(pos) => self.read_mem_elt(pos),
+                }
+            }
+            ParameterMode::Relative => {
+                let offset = *self.read_mem_elt(i)?;
+                let target =
+                    self.relative_base + T::to_i32(offset).ok_or(MemoryAccessError::Overflow)?;
+                if target >= 0 {
+                    self.read_mem_elt(target as usize)
+                } else {
+                    Err(MemoryAccessError::Negative)
                 }
             }
         }
@@ -465,5 +536,35 @@ mod tests {
         assert_machines_eq(&program, None, &mut std::iter::once(7), &[999]);
         assert_machines_eq(&program, None, &mut std::iter::once(8), &[1000]);
         assert_machines_eq(&program, None, &mut std::iter::once(9), &[1001]);
+    }
+
+    //#[test]
+    //fn day_9_1() {
+    //    let program = [
+    //        109, 1, 204, -1, 1001, 100, 1, 100, 1008, 100, 16, 101, 1006, 101, 0, 99,
+    //    ];
+    //    assert_machines_eq(
+    //        &program,
+    //        None,
+    //        &mut std::iter::empty(),
+    //        &program,
+    //    );
+    //}
+
+    #[test]
+    fn day_9_2() {
+        let program: [u64; 8] = [1102, 34915192, 34915192, 7, 4, 7, 99, 0];
+        assert_machines_eq(
+            &program,
+            None,
+            &mut std::iter::empty(),
+            &[program[1] * program[2]],
+        );
+    }
+
+    #[test]
+    fn day_9_3() {
+        let program: [u64; 3] = [104, 1125899906842624, 99];
+        assert_machines_eq(&program, None, &mut std::iter::empty(), &[program[1]]);
     }
 }
