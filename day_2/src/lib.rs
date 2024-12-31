@@ -14,13 +14,13 @@ pub mod day_2 {
         T: Clone,
     {
         let mut machine = MachineState::new_with_memory(numbers);
-        machine.set_mem_elt(1, 12)?;
-        machine.set_mem_elt(2, 2)?;
+        machine.set_mem_elt(1, 12);
+        machine.set_mem_elt(2, 2);
 
         machine.execute_to_end(&mut std::iter::empty())?;
 
-        let result = machine.read_mem_elt(0)?;
-        Ok(*result)
+        let result = machine.read_mem_elt(0);
+        Ok(result)
     }
 
     pub fn part_2<T>(numbers: &T, target: usize) -> usize
@@ -34,12 +34,12 @@ pub mod day_2 {
                 (0..=99)
                     .filter_map(|verb| {
                         machine.reset(numbers.clone());
-                        machine.set_mem_elt(1, noun).ok()?;
-                        machine.set_mem_elt(2, verb).ok()?;
+                        machine.set_mem_elt(1, noun);
+                        machine.set_mem_elt(2, verb);
                         machine.execute_to_end(&mut std::iter::empty()).ok()?;
                         // safety: on termination, program counter is on opcode 99,
                         // so there is an element in the array
-                        if *machine.read_mem_elt(0).unwrap() == target {
+                        if machine.read_mem_elt(0) == target {
                             Some((noun, verb))
                         } else {
                             None
