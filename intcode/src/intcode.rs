@@ -41,6 +41,32 @@ impl Num for i32 {
     }
 }
 
+impl Num for i64 {
+    fn zero() -> Self {
+        0
+    }
+
+    fn one() -> Self {
+        1
+    }
+
+    fn to_usize(self) -> Option<usize> {
+        if self < 0 {
+            None
+        } else {
+            Some(self as usize)
+        }
+    }
+
+    fn to_i32(self) -> Option<i32> {
+        if self < (i32::MIN as i64) || self > (i32::MAX as i64) {
+            None
+        } else {
+            Some(self as i32)
+        }
+    }
+}
+
 impl Num for u64 {
     fn zero() -> Self {
         0
@@ -282,11 +308,27 @@ impl<T> MachineState<T> {
             1_usize => self.transform_to_dest(opcode, |a, b| a + b),
             2 => self.transform_to_dest(opcode, |a, b| a * b),
             3 => {
-                if opcode != 3 {
-                    return Err(MachineExecutionError::BadParameterMode(opcode));
-                }
-                let location = self.read_mem_elt(self.pc + 1);
-                let location = T::to_usize(location).ok_or(MemoryAccessError::Negative)?;
+                let location = match opcode {
+                    3 => {
+                        let location = self.read_mem_elt(self.pc + 1);
+                        T::to_usize(location).ok_or(MemoryAccessError::Negative)?
+                    }
+                    203 => {
+                        let offset = T::to_i32(self.read_mem_elt(self.pc + 1)).ok_or(
+                            MachineExecutionError::OutOfBounds(MemoryAccessError::Overflow),
+                        )?;
+                        let target = offset + self.relative_base;
+                        if target < 0 {
+                            return Err(MachineExecutionError::OutOfBounds(
+                                MemoryAccessError::Negative,
+                            ));
+                        }
+                        target as usize
+                    }
+                    _ => {
+                        return Err(MachineExecutionError::BadParameterMode(opcode));
+                    }
+                };
                 self.pc += 2;
                 Ok(StepResult::Io(StepIoResult::AwaitingInput(location)))
             }
