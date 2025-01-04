@@ -1,0 +1,21 @@
+[package]
+name = "day_11"
+version = "0.1.0"
+authors = ["Smaug123 <3138005+Smaug123@users.noreply.github.com>"]
+edition = "2021"
+
+[features]
+no_real_inputs = []
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+intcode = { path = "../intcode" }
+
+[dev-dependencies]
+criterion = "0.4.0"
+insta = "1.41.1"
+
+[[bench]]
+name = "day_11"
+harness = false
