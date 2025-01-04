@@ -32,10 +32,10 @@ pub mod day_13 {
             .collect()
     }
 
-    fn render_board(outputs: &[i32]) -> (i32, HashMap<(i32, i32), Tile>) {
+    fn render_board(outputs: &[i32]) -> (Option<i32>, HashMap<(i32, i32), Tile>) {
         let mut iter = outputs.iter().copied();
         let mut output = HashMap::new();
-        let mut score = 0;
+        let mut score = None;
         loop {
             let x = match iter.next() {
                 None => {
@@ -46,9 +46,9 @@ pub mod day_13 {
             let y = iter.next().unwrap();
 
             if x == 0 && y == -1 {
-                score = iter.next().unwrap();
+                score = Some(iter.next().unwrap());
             } else {
-                let tile = iter.next().and_then(|x| Tile::from_int(x)).unwrap();
+                let tile = iter.next().and_then(Tile::from_int).unwrap();
                 output.insert((x, y), tile);
             }
         }
@@ -58,6 +58,7 @@ pub mod day_13 {
         let mut machine = MachineState::new_with_memory(&input.iter().copied());
         let output = machine.execute_to_end(&mut std::iter::empty())?;
 
+        // Could do this more efficiently by inlining away the vec, but :shrug: this is terse
         let (_score, board) = render_board(&output);
 
         Ok(board.iter().filter(|(_, x)| **x == Tile::Block).count() as u32)
