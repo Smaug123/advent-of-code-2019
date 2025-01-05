@@ -685,6 +685,40 @@ pub mod day_19 {
         Ok(result)
     }
 
+    /// Returns the first x strictly after x_known_good for which f(x) is false,
+    /// assuming that F's support is an interval.
+    /// You must ensure yourself that f(x_known_good) == true.
+    fn find_upper_boundary<F>(f: F, x_known_good: i64) -> i64
+    where
+        F: Fn(i64) -> bool,
+    {
+        let mut upper_false = 2 * x_known_good;
+        loop {
+            if f(upper_false) {
+                // Keep doubling!
+                upper_false *= 2;
+            } else {
+                // Walked past the top.
+                break;
+            }
+        }
+
+        let mut lower_true = x_known_good;
+
+        // Loop invariant: upper_false is known to be false and lower_true is known to be true.
+        while lower_true + 1 < upper_false {
+            let midpoint = (upper_false - lower_true) / 2 + lower_true;
+            // midpoint > lower_true, because upper_false - lower_true >= 2 due to the `while` condition.
+            if f(midpoint) {
+                lower_true = midpoint;
+            } else {
+                upper_false = midpoint;
+            }
+        }
+
+        upper_false
+    }
+
     pub fn part_2(input: &[i64]) -> Result<i64, MachineExecutionError> {
         let output = get_output(input)?.simplify(
             &List::new()
@@ -721,36 +755,30 @@ pub mod day_19 {
                     // walked off the end
                     break;
                 }
-                let is_good_row = {
-                    let mut is_good = true;
-                    for i in 1..=desired_dim - 1 {
-                        if output
-                            .eval(&mut |v| if v == 'x' { Some(x + i) } else { Some(y) })
-                            .unwrap()
-                            == 0
-                        {
-                            is_good = false;
-                            break;
+                let is_good_row = output
+                    .eval(&mut |v| {
+                        if v == 'x' {
+                            Some(x + desired_dim - 1)
+                        } else {
+                            Some(y)
                         }
-                    }
-                    is_good
-                };
+                    })
+                    .unwrap()
+                    == 1;
                 if is_good_row {
-                    let mut is_good_col = true;
-                    for i in 1..=desired_dim - 1 {
-                        if output
-                            .eval(&mut |v| if v == 'x' { Some(x) } else { Some(y + i) })
-                            .unwrap()
-                            == 0
-                        {
-                            is_good_col = false;
-                            break;
-                        }
-                    }
-                    if is_good_col {
+                    if output
+                        .eval(&mut |v| {
+                            if v == 'x' {
+                                Some(x)
+                            } else {
+                                Some(y + desired_dim - 1)
+                            }
+                        })
+                        .unwrap()
+                        == 1
+                    {
                         return Ok(10000 * x + y);
                     } else {
-                        // TODO: optimise this, we're re-checking a load of stuff
                         x += 1;
                     }
                 } else {
