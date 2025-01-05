@@ -1,10 +1,12 @@
+mod linked_list;
+
 pub mod day_19 {
+    use crate::linked_list::List;
     use intcode::intcode::{MachineExecutionError, MachineState, Num};
     use std::{
         collections::HashSet,
         fmt::Display,
         ops::{Add, Mul},
-        rc::Rc,
     };
 
     #[derive(Clone, Debug)]
@@ -17,61 +19,6 @@ pub mod day_19 {
         IfEqThen(Box<Ast>, Box<Ast>, Box<Ast>, Box<Ast>),
         IfLessThen(Box<Ast>, Box<Ast>, Box<Ast>, Box<Ast>),
         Variable(char),
-    }
-
-    pub struct List<T> {
-        head: Link<T>,
-    }
-
-    type Link<T> = Option<Rc<Node<T>>>;
-
-    struct Node<T> {
-        elem: T,
-        next: Link<T>,
-    }
-
-    impl<T> List<T> {
-        pub fn new() -> Self {
-            List { head: None }
-        }
-        pub fn prepend(&self, elem: T) -> List<T> {
-            List {
-                head: Some(Rc::new(Node {
-                    elem: elem,
-                    next: self.head.clone(),
-                })),
-            }
-        }
-        pub fn tail(&self) -> List<T> {
-            List {
-                head: self.head.as_ref().and_then(|node| node.next.clone()),
-            }
-        }
-        pub fn head(&self) -> Option<&T> {
-            self.head.as_ref().map(|node| &node.elem)
-        }
-    }
-    pub struct Iter<'a, T> {
-        next: Option<&'a Node<T>>,
-    }
-
-    impl<T> List<T> {
-        pub fn iter(&self) -> Iter<'_, T> {
-            Iter {
-                next: self.head.as_deref(),
-            }
-        }
-    }
-
-    impl<'a, T> Iterator for Iter<'a, T> {
-        type Item = &'a T;
-
-        fn next(&mut self) -> Option<Self::Item> {
-            self.next.map(|node| {
-                self.next = node.next.as_deref();
-                &node.elem
-            })
-        }
     }
 
     enum Condition {
@@ -169,7 +116,10 @@ pub mod day_19 {
                 Ast::Constant(i) => Ok(*i),
                 Ast::Zero => Ok(0),
                 Ast::One => Ok(1),
-                Ast::Variable(c) => match var(*c) { None => Err(*c), Some(x) => Ok(x) },
+                Ast::Variable(c) => match var(*c) {
+                    None => Err(*c),
+                    Some(x) => Ok(x),
+                },
                 Ast::AddNode(x, y) => Ok(x.eval(var)? + y.eval(var)?),
                 Ast::MulNode(x, y) => Ok(x.eval(var)? * y.eval(var)?),
                 Ast::IfEqThen(us, other, eq_res, neq_res) => {
@@ -350,9 +300,10 @@ pub mod day_19 {
                         (Ast::One, Ast::MulNode(ast, ast1)) => {
                             Ast::AddNode(Box::new(Ast::One), Box::new(Ast::MulNode(ast, ast1)))
                         }
-                        (Ast::AddNode(ast, ast1), other) => {
-                            Ast::AddNode(ast, Box::new(Ast::AddNode(ast1, Box::new(other)).simplify(conditions)))
-                        }
+                        (Ast::AddNode(ast, ast1), other) => Ast::AddNode(
+                            ast,
+                            Box::new(Ast::AddNode(ast1, Box::new(other)).simplify(conditions)),
+                        ),
                         (Ast::IfLessThen(a, b, if_less, if_not_less), Ast::Constant(c))
                         | (Ast::Constant(c), Ast::IfLessThen(a, b, if_less, if_not_less)) => {
                             Ast::IfLessThen(
@@ -431,12 +382,10 @@ pub mod day_19 {
         fn eq(&self, other: &Self) -> bool {
             match self.eval(&mut |_| None) {
                 Err(v) => panic!("{v}"),
-                Ok(i) => {
-                    match other.eval(&mut |_| None) {
-                        Err(v) => panic!("{v}"),
-                        Ok(j) => i == j
-                    }
-                }
+                Ok(i) => match other.eval(&mut |_| None) {
+                    Err(v) => panic!("{v}"),
+                    Ok(j) => i == j,
+                },
             }
         }
     }
@@ -447,12 +396,10 @@ pub mod day_19 {
         fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
             match self.eval(&mut |_| None) {
                 Err(v) => panic!("{v}"),
-                Ok(i) => {
-                    match other.eval(&mut |_| None) {
-                        Err(v) => panic!("{v}"),
-                        Ok(j) => Some(i.cmp(&j))
-                    }
-                }
+                Ok(i) => match other.eval(&mut |_| None) {
+                    Err(v) => panic!("{v}"),
+                    Ok(j) => Some(i.cmp(&j)),
+                },
             }
         }
     }
@@ -461,12 +408,10 @@ pub mod day_19 {
         fn cmp(&self, other: &Self) -> std::cmp::Ordering {
             match self.eval(&mut |_| None) {
                 Err(v) => panic!("{v}"),
-                Ok(i) => {
-                    match other.eval(&mut |_| None) {
-                        Err(v) => panic!("{v}"),
-                        Ok(j) => i.cmp(&j)
-                    }
-                }
+                Ok(i) => match other.eval(&mut |_| None) {
+                    Err(v) => panic!("{v}"),
+                    Ok(j) => i.cmp(&j),
+                },
             }
         }
     }
@@ -475,7 +420,60 @@ pub mod day_19 {
         type Output = Ast;
 
         fn add(self, rhs: Ast) -> Self::Output {
-            Ast::AddNode(Box::new(self), Box::new(rhs))
+            match (self, rhs) {
+                (Ast::Zero, x) | (x, Ast::Zero) | (Ast::Constant(0), x) | (x, Ast::Constant(0)) => {
+                    x
+                }
+                (Ast::Constant(a), Ast::Constant(b)) => Ast::Constant(a + b),
+                (Ast::AddNode(a, b), c) => a.add(b.add(c)),
+                (Ast::Constant(c), Ast::IfLessThen(x, y, lt_res, geq_res))
+                | (Ast::IfLessThen(x, y, lt_res, geq_res), Ast::Constant(c)) => Ast::IfLessThen(
+                    x,
+                    y,
+                    Box::new(lt_res.add(Ast::Constant(c))),
+                    Box::new(geq_res.add(Ast::Constant(c))),
+                ),
+                (Ast::Constant(a), Ast::AddNode(b, c)) => {
+                    match *b {
+                        Ast::Constant(b) => Ast::Constant(a + b).add(*c),
+                        b => {
+                            Ast::AddNode(Box::new(Ast::Constant(a)), Box::new(Ast::AddNode(Box::new(b), c)))
+                        }
+                    }
+                },
+                (
+                    Ast::IfLessThen(x, y, lt_res, geq_res),
+                    Ast::IfLessThen(x2, y2, lt_res2, geq_res2),
+                ) => {
+                    if x.strict_equal(&x2) && y.strict_equal(&y2) {
+                        Ast::IfLessThen(
+                            x,
+                            y,
+                            Box::new(lt_res.add(*lt_res2)),
+                            Box::new(geq_res.add(*geq_res2)),
+                        )
+                    } else {
+                        Ast::AddNode(
+                            Box::new(Ast::IfLessThen(x, y, lt_res, geq_res)),
+                            Box::new(Ast::IfLessThen(x2, y2, lt_res2, geq_res2)),
+                        )
+                    }
+                }
+                (x, Ast::MulNode(y, c)) => match *c {
+                    Ast::Constant(-1) => {
+                        if x.strict_equal(&y) {
+                            Ast::Zero
+                        } else {
+                            Ast::AddNode(
+                                Box::new(x),
+                                Box::new(Ast::MulNode(y, Box::new(Ast::Constant(-1)))),
+                            )
+                        }
+                    }
+                    _ => Ast::AddNode(Box::new(x), Box::new(Ast::MulNode(y, c))),
+                },
+                (x, y) => Ast::AddNode(Box::new(x), Box::new(y)),
+            }
         }
     }
 
@@ -483,7 +481,39 @@ pub mod day_19 {
         type Output = Ast;
 
         fn mul(self, rhs: Self) -> Self::Output {
-            Ast::MulNode(Box::new(self), Box::new(rhs))
+            match (self, rhs) {
+                (Ast::Zero, _) | (_, Ast::Zero) | (Ast::Constant(0), _) | (_, Ast::Constant(0)) => {
+                    Ast::Zero
+                }
+                (Ast::One, x) | (x, Ast::One) | (Ast::Constant(1), x) | (x, Ast::Constant(1)) => x,
+                (Ast::Constant(a), Ast::Constant(b)) => Ast::Constant(a * b),
+                (Ast::Constant(a), Ast::AddNode(b, c))
+                | ( Ast::AddNode(b, c), Ast::Constant(a))
+                => Ast::Constant(a).mul(*b).add(Ast::Constant(a).mul(*c)),
+                (Ast::Constant(a), Ast::MulNode(b, c)) => {
+                    match *b {
+                        Ast::Constant(b) => Ast::Constant(a * b).mul(*c),
+                        b => {
+                            Ast::MulNode(Box::new(Ast::Constant(a)), Box::new(Ast::MulNode(Box::new(b), c)))
+                        }
+                    }
+                }
+                (Ast::IfLessThen(x, y, lt_res, geq_res), Ast::Constant(c))
+                | (Ast::Constant(c), Ast::IfLessThen(x, y, lt_res, geq_res)) => Ast::IfLessThen(
+                    x,
+                    y,
+                    Box::new(lt_res.mul(Ast::Constant(c))),
+                    Box::new(geq_res.mul(Ast::Constant(c))),
+                ),
+                (Ast::MulNode(a, b), c) => a.mul(b.mul(c)),
+                (Ast::IfLessThen(x, y, lt_res, geq_res), Ast::Variable(v)) => Ast::IfLessThen(
+                    x,
+                    y,
+                    Box::new(lt_res.mul(Ast::Variable(v))),
+                    Box::new(geq_res.mul(Ast::Variable(v))),
+                ),
+                (x, y) => Ast::MulNode(Box::new(x), Box::new(y)),
+            }
         }
     }
 
@@ -500,22 +530,86 @@ pub mod day_19 {
             match self.eval(&mut |_| None) {
                 Err(_) => None,
                 Ok(eval) => {
-            if eval < 0 {
-                None
-            } else {
-                Some(eval as usize)
+                    if eval < 0 {
+                        None
+                    } else {
+                        Some(eval as usize)
+                    }
+                }
             }
-        }}
         }
 
         fn to_i32(self) -> Option<i32> {
             match self.eval(&mut |_| None) {
                 Err(_) => None,
-                Ok(eval) => Some(eval)
+                Ok(eval) => Some(eval),
             }
         }
 
         fn if_less_then_else(self, other: Self, if_less: Self, if_not_less: Self) -> Self {
+            // Pigeonhole optimisation for the "absolute value" pattern
+            let other = match self {
+                Ast::Constant(0) | Ast::Zero => match other {
+                    Ast::IfLessThen(a, b, if_less1, if_not_less1) => {
+                        if a.strict_equal(&Ast::Zero) {
+                            match (*b, *if_less1, *if_not_less1) {
+                                (
+                                    Ast::Variable(var),
+                                    Ast::Variable(var2),
+                                    Ast::MulNode(mul1, mul2),
+                                ) => {
+                                    if var == var2 {
+                                        match (*mul1, *mul2) {
+                                            (Ast::Constant(-1), Ast::Variable(var3)) => {
+                                                if var2 == var3 {
+                                                    return if_less;
+                                                } else {
+                                                    Ast::IfLessThen(
+                                                        a,
+                                                        Box::new(Ast::Variable(var)),
+                                                        Box::new(Ast::Variable(var2)),
+                                                        Box::new(Ast::MulNode(
+                                                            Box::new(Ast::Constant(-1)),
+                                                            Box::new(Ast::Variable(var3)),
+                                                        )),
+                                                    )
+                                                }
+                                            }
+                                            (mul1, mul2) => Ast::IfLessThen(
+                                                a,
+                                                Box::new(Ast::Variable(var)),
+                                                Box::new(Ast::Variable(var2)),
+                                                Box::new(Ast::MulNode(
+                                                    Box::new(mul1),
+                                                    Box::new(mul2),
+                                                )),
+                                            ),
+                                        }
+                                    } else {
+                                        Ast::IfLessThen(
+                                            a,
+                                            Box::new(Ast::Variable(var)),
+                                            Box::new(Ast::Variable(var2)),
+                                            Box::new(Ast::MulNode(mul1, mul2)),
+                                        )
+                                    }
+                                }
+                                (b, if_less_1, if_not_less_1) => Ast::IfLessThen(
+                                    a,
+                                    Box::new(b),
+                                    Box::new(if_less_1),
+                                    Box::new(if_not_less_1),
+                                ),
+                            }
+                        } else {
+                            Ast::IfLessThen(a, b, if_less1, if_not_less1)
+                        }
+                    }
+                    _ => other,
+                },
+                _ => other,
+            };
+
             Ast::IfLessThen(
                 Box::new(self),
                 Box::new(other),
@@ -583,55 +677,60 @@ pub mod day_19 {
         Ok(v)
     }
 
-    // Returns the first x for which (x, y) is 1, and perhaps also a higher x for which (x, y) is also known to be 1.
-    fn find_lower_boundary(
-        machine: &mut MachineState<i32>,
-        y: i32,
-    ) -> Result<(i32, Option<i32>), MachineExecutionError> {
-        if query_machine(machine, 0, y)? == 1 {
-            return Ok((0, None));
-        }
-
-        if query_machine(machine, 1, y)? == 1 {
-            return Ok((1, None));
-        }
-
-        let mut lower_guess = 2;
-
-        let known_upper_is_one = loop {
-            let query_result = query_machine(machine, lower_guess, y)?;
-            if query_result == 0 {
-                lower_guess *= 2;
-            } else {
-                break lower_guess;
+    pub fn part_1(input: &[i32]) -> Result<u32, MachineExecutionError> {
+        let mut machine =
+            MachineState::new_with_memory(&input.iter().copied().map(|x| Ast::Constant(x)));
+        match machine.execute_until_input()? {
+            intcode::intcode::StepIoResult::Terminated => {
+                panic!("terminated unexpectedly");
+            }
+            intcode::intcode::StepIoResult::Output(_) => {
+                panic!("unexpectedly output");
+            }
+            intcode::intcode::StepIoResult::AwaitingInput(loc) => {
+                machine.set_mem_elt(loc, Ast::Variable('x'));
             }
         };
-
-        let mut upper_is_one = known_upper_is_one;
-        let mut lower_is_zero = upper_is_one / 2;
-
-        // Loop invariant: upper_is_one is known to be 1 and known_upper / 2 is known to be 0.
-        while lower_is_zero + 1 < upper_is_one {
-            let midpoint = (upper_is_one - lower_is_zero) / 2 + lower_is_zero;
-            // midpoint > lower_is_zero, because upper_is_one - lower_is_zero >= 2 due to the `while` condition.
-            let query_result = query_machine(machine, midpoint, y)?;
-            if query_result == 0 {
-                lower_is_zero = query_result;
-            } else {
-                upper_is_one = query_result;
+        match machine.execute_until_input()? {
+            intcode::intcode::StepIoResult::Terminated => {
+                panic!("terminated unexpectedly");
             }
-        }
-
-        Ok((upper_is_one, Some(known_upper_is_one)))
-    }
-
-    pub fn part_1(input: &[i32]) -> Result<u32, MachineExecutionError> {
-        let mut machine = MachineState::new_with_memory(&input.iter().copied());
-        let mut result = 0u32;
+            intcode::intcode::StepIoResult::Output(_) => {
+                panic!("unexpectedly output");
+            }
+            intcode::intcode::StepIoResult::AwaitingInput(loc) => {
+                machine.set_mem_elt(loc, Ast::Variable('y'));
+            }
+        };
+        let output = match machine.execute_until_input()? {
+            intcode::intcode::StepIoResult::Terminated => {
+                panic!("terminated unexpectedly");
+            }
+            intcode::intcode::StepIoResult::AwaitingInput(_) => {
+                panic!("unexpectedly asked for input");
+            }
+            intcode::intcode::StepIoResult::Output(ast) => ast,
+        };
+        // let simplified = output.simplify(
+        //     &List::new(), //.prepend(Condition::LessThan(
+        //                   //    Box::new(Ast::Zero),
+        //                   //    Box::new(Ast::Variable('y'))
+        //                   //))
+        //                   //.prepend(Condition::LessThan(
+        //                   //    Box::new(Ast::Zero),
+        //                   //    Box::new(Ast::Variable('x'))
+        //                   //))
+        // );
+        let mut result = 0;
         for y in 0..=49 {
             for x in 0..=49 {
-                machine.reset(input.iter().copied());
-                let query_result = query_machine(&mut machine, x, y)?;
+                let query_result = output
+                    .eval(&mut |c| match c {
+                        'x' => Some(x),
+                        'y' => Some(y),
+                        _ => None,
+                    })
+                    .unwrap();
                 result += query_result as u32
             }
         }
@@ -675,39 +774,41 @@ pub mod day_19 {
         let mut m = HashSet::new();
         println!(
             "{}",
-            output.simplify(
-                &List::new()
-                    .prepend(Condition::LessThan(
-                        Box::new(Ast::Zero),
-                        Box::new(Ast::Variable('y'))
-                    ))
-                    .prepend(Condition::LessThan(
-                        Box::new(Ast::Zero),
-                        Box::new(Ast::Variable('x'))
-                    ))
-            )
-            .simplify(
-                &List::new()
-                    .prepend(Condition::LessThan(
-                        Box::new(Ast::Zero),
-                        Box::new(Ast::Variable('y'))
-                    ))
-                    .prepend(Condition::LessThan(
-                        Box::new(Ast::Zero),
-                        Box::new(Ast::Variable('x'))
-                    ))
+            output
+                .simplify(
+                    &List::new()
+                        .prepend(Condition::LessThan(
+                            Box::new(Ast::Zero),
+                            Box::new(Ast::Variable('y'))
+                        ))
+                        .prepend(Condition::LessThan(
+                            Box::new(Ast::Zero),
+                            Box::new(Ast::Variable('x'))
+                        ))
                 )
-            .simplify(
-                &List::new()
-                    .prepend(Condition::LessThan(
-                        Box::new(Ast::Zero),
-                        Box::new(Ast::Variable('y'))
-                    ))
-                    .prepend(Condition::LessThan(
-                        Box::new(Ast::Zero),
-                        Box::new(Ast::Variable('x'))
-                    ))
-            ).simplify(&List::new())
+                .simplify(
+                    &List::new()
+                        .prepend(Condition::LessThan(
+                            Box::new(Ast::Zero),
+                            Box::new(Ast::Variable('y'))
+                        ))
+                        .prepend(Condition::LessThan(
+                            Box::new(Ast::Zero),
+                            Box::new(Ast::Variable('x'))
+                        ))
+                )
+                .simplify(
+                    &List::new()
+                        .prepend(Condition::LessThan(
+                            Box::new(Ast::Zero),
+                            Box::new(Ast::Variable('y'))
+                        ))
+                        .prepend(Condition::LessThan(
+                            Box::new(Ast::Zero),
+                            Box::new(Ast::Variable('x'))
+                        ))
+                )
+                .simplify(&List::new())
         );
         println!(
             "{:?}",
@@ -729,6 +830,7 @@ mod tests {
     fn test_day_19() {
         let input = input(include_str!("../input.txt"));
         assert_eq!(part_1(&input).unwrap(), 226);
-        assert_eq!(part_2(&input).unwrap(), 18509);
+        panic!("")
+        // assert_eq!(part_2(&input).unwrap(), 18509);
     }
 }
