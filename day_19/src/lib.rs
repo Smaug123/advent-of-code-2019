@@ -11,7 +11,7 @@ pub mod day_19 {
 
     #[derive(Clone, Debug)]
     enum Ast {
-        Constant(i32),
+        Constant(i64),
         Zero,
         One,
         AddNode(Box<Ast>, Box<Ast>),
@@ -108,9 +108,9 @@ pub mod day_19 {
             }
         }
 
-        fn eval<F>(&self, var: &mut F) -> Result<i32, char>
+        fn eval<F>(&self, var: &mut F) -> Result<i64, char>
         where
-            F: FnMut(char) -> Option<i32>,
+            F: FnMut(char) -> Option<i64>,
         {
             match self {
                 Ast::Constant(i) => Ok(*i),
@@ -433,13 +433,12 @@ pub mod day_19 {
                     Box::new(lt_res.add(Ast::Constant(c))),
                     Box::new(geq_res.add(Ast::Constant(c))),
                 ),
-                (Ast::Constant(a), Ast::AddNode(b, c)) => {
-                    match *b {
-                        Ast::Constant(b) => Ast::Constant(a + b).add(*c),
-                        b => {
-                            Ast::AddNode(Box::new(Ast::Constant(a)), Box::new(Ast::AddNode(Box::new(b), c)))
-                        }
-                    }
+                (Ast::Constant(a), Ast::AddNode(b, c)) => match *b {
+                    Ast::Constant(b) => Ast::Constant(a + b).add(*c),
+                    b => Ast::AddNode(
+                        Box::new(Ast::Constant(a)),
+                        Box::new(Ast::AddNode(Box::new(b), c)),
+                    ),
                 },
                 (
                     Ast::IfLessThen(x, y, lt_res, geq_res),
@@ -487,17 +486,16 @@ pub mod day_19 {
                 }
                 (Ast::One, x) | (x, Ast::One) | (Ast::Constant(1), x) | (x, Ast::Constant(1)) => x,
                 (Ast::Constant(a), Ast::Constant(b)) => Ast::Constant(a * b),
-                (Ast::Constant(a), Ast::AddNode(b, c))
-                | ( Ast::AddNode(b, c), Ast::Constant(a))
-                => Ast::Constant(a).mul(*b).add(Ast::Constant(a).mul(*c)),
-                (Ast::Constant(a), Ast::MulNode(b, c)) => {
-                    match *b {
-                        Ast::Constant(b) => Ast::Constant(a * b).mul(*c),
-                        b => {
-                            Ast::MulNode(Box::new(Ast::Constant(a)), Box::new(Ast::MulNode(Box::new(b), c)))
-                        }
-                    }
+                (Ast::Constant(a), Ast::AddNode(b, c)) | (Ast::AddNode(b, c), Ast::Constant(a)) => {
+                    Ast::Constant(a).mul(*b).add(Ast::Constant(a).mul(*c))
                 }
+                (Ast::Constant(a), Ast::MulNode(b, c)) => match *b {
+                    Ast::Constant(b) => Ast::Constant(a * b).mul(*c),
+                    b => Ast::MulNode(
+                        Box::new(Ast::Constant(a)),
+                        Box::new(Ast::MulNode(Box::new(b), c)),
+                    ),
+                },
                 (Ast::IfLessThen(x, y, lt_res, geq_res), Ast::Constant(c))
                 | (Ast::Constant(c), Ast::IfLessThen(x, y, lt_res, geq_res)) => Ast::IfLessThen(
                     x,
@@ -542,7 +540,13 @@ pub mod day_19 {
         fn to_i32(self) -> Option<i32> {
             match self.eval(&mut |_| None) {
                 Err(_) => None,
-                Ok(eval) => Some(eval),
+                Ok(eval) => {
+                    if eval <= i32::MAX as i64 && eval >= i32::MIN as i64 {
+                        Some(eval as i32)
+                    } else {
+                        None
+                    }
+                }
             }
         }
 
@@ -628,56 +632,14 @@ pub mod day_19 {
         }
     }
 
-    pub fn input(s: &str) -> Vec<i32> {
+    pub fn input(s: &str) -> Vec<i64> {
         s.trim()
             .split(',')
             .map(|l| str::parse(l).unwrap())
             .collect()
     }
 
-    fn query_machine<T>(
-        machine: &mut MachineState<T>,
-        x: T,
-        y: T,
-    ) -> Result<T, MachineExecutionError>
-    where
-        T: Add<T, Output = T> + Mul<T, Output = T> + Copy + Ord + Num,
-    {
-        match machine.execute_until_input()? {
-            intcode::intcode::StepIoResult::Terminated => {
-                panic!("Unexpectedly terminated");
-            }
-            intcode::intcode::StepIoResult::Output(_) => {
-                panic!("Unexpectedly terminated");
-            }
-            intcode::intcode::StepIoResult::AwaitingInput(v) => {
-                machine.set_mem_elt(v, x);
-            }
-        }
-        match machine.execute_until_input()? {
-            intcode::intcode::StepIoResult::Terminated => {
-                panic!("Unexpectedly terminated");
-            }
-            intcode::intcode::StepIoResult::Output(_) => {
-                panic!("Unexpectedly terminated");
-            }
-            intcode::intcode::StepIoResult::AwaitingInput(v) => {
-                machine.set_mem_elt(v, y);
-            }
-        }
-        let v = match machine.execute_until_input()? {
-            intcode::intcode::StepIoResult::Terminated => {
-                panic!("Unexpectedly terminated");
-            }
-            intcode::intcode::StepIoResult::Output(v) => v,
-            intcode::intcode::StepIoResult::AwaitingInput(_) => {
-                panic!("Unexpectedly asked for input")
-            }
-        };
-        Ok(v)
-    }
-
-    pub fn part_1(input: &[i32]) -> Result<u32, MachineExecutionError> {
+    fn get_output(input: &[i64]) -> Result<Ast, MachineExecutionError> {
         let mut machine =
             MachineState::new_with_memory(&input.iter().copied().map(|x| Ast::Constant(x)));
         match machine.execute_until_input()? {
@@ -711,16 +673,12 @@ pub mod day_19 {
             }
             intcode::intcode::StepIoResult::Output(ast) => ast,
         };
-        // let simplified = output.simplify(
-        //     &List::new(), //.prepend(Condition::LessThan(
-        //                   //    Box::new(Ast::Zero),
-        //                   //    Box::new(Ast::Variable('y'))
-        //                   //))
-        //                   //.prepend(Condition::LessThan(
-        //                   //    Box::new(Ast::Zero),
-        //                   //    Box::new(Ast::Variable('x'))
-        //                   //))
-        // );
+
+        Ok(output)
+    }
+
+    pub fn part_1(input: &[i64]) -> Result<u32, MachineExecutionError> {
+        let output = get_output(&input)?;
         let mut result = 0;
         for y in 0..=49 {
             for x in 0..=49 {
@@ -737,87 +695,80 @@ pub mod day_19 {
         Ok(result)
     }
 
-    pub fn part_2(input: &[i32]) -> Result<i32, MachineExecutionError> {
-        let mut machine =
-            MachineState::new_with_memory(&input.iter().copied().map(|x| Ast::Constant(x)));
-        match machine.execute_until_input()? {
-            intcode::intcode::StepIoResult::Terminated => {
-                panic!("terminated unexpectedly");
-            }
-            intcode::intcode::StepIoResult::Output(_) => {
-                panic!("unexpectedly output");
-            }
-            intcode::intcode::StepIoResult::AwaitingInput(loc) => {
-                machine.set_mem_elt(loc, Ast::Variable('x'));
-            }
-        };
-        match machine.execute_until_input()? {
-            intcode::intcode::StepIoResult::Terminated => {
-                panic!("terminated unexpectedly");
-            }
-            intcode::intcode::StepIoResult::Output(_) => {
-                panic!("unexpectedly output");
-            }
-            intcode::intcode::StepIoResult::AwaitingInput(loc) => {
-                machine.set_mem_elt(loc, Ast::Variable('y'));
-            }
-        };
-        let output = match machine.execute_until_input()? {
-            intcode::intcode::StepIoResult::Terminated => {
-                panic!("terminated unexpectedly");
-            }
-            intcode::intcode::StepIoResult::AwaitingInput(_) => {
-                panic!("unexpectedly asked for input");
-            }
-            intcode::intcode::StepIoResult::Output(ast) => ast,
-        };
-        let mut m = HashSet::new();
-        println!(
-            "{}",
-            output
-                .simplify(
-                    &List::new()
-                        .prepend(Condition::LessThan(
-                            Box::new(Ast::Zero),
-                            Box::new(Ast::Variable('y'))
-                        ))
-                        .prepend(Condition::LessThan(
-                            Box::new(Ast::Zero),
-                            Box::new(Ast::Variable('x'))
-                        ))
-                )
-                .simplify(
-                    &List::new()
-                        .prepend(Condition::LessThan(
-                            Box::new(Ast::Zero),
-                            Box::new(Ast::Variable('y'))
-                        ))
-                        .prepend(Condition::LessThan(
-                            Box::new(Ast::Zero),
-                            Box::new(Ast::Variable('x'))
-                        ))
-                )
-                .simplify(
-                    &List::new()
-                        .prepend(Condition::LessThan(
-                            Box::new(Ast::Zero),
-                            Box::new(Ast::Variable('y'))
-                        ))
-                        .prepend(Condition::LessThan(
-                            Box::new(Ast::Zero),
-                            Box::new(Ast::Variable('x'))
-                        ))
-                )
-                .simplify(&List::new())
+    pub fn part_2(input: &[i64]) -> Result<i64, MachineExecutionError> {
+        let output = get_output(&input)?.simplify(
+            &List::new()
+                .prepend(Condition::LessThan(
+                    Box::new(Ast::Zero),
+                    Box::new(Ast::Variable('y')),
+                ))
+                .prepend(Condition::LessThan(
+                    Box::new(Ast::Zero),
+                    Box::new(Ast::Variable('x')),
+                )),
         );
-        println!(
-            "{:?}",
-            output.eval(&mut |c| {
-                m.insert(c);
-                Some(0)
-            })
-        );
-        panic!("Asked for: {:?}", m)
+
+        let desired_dim = 100;
+
+        let mut start_x = 1;
+        let mut y = 9;
+        loop {
+            y += 1;
+            let mut found_x = false;
+            let mut x = start_x;
+            loop {
+                let v = output
+                    .eval(&mut |v| if v == 'x' { Some(x) } else { Some(y) })
+                    .unwrap();
+                if !found_x && v == 1 {
+                    start_x = x;
+                    found_x = true;
+                } else if !found_x {
+                    x += 1;
+                    continue;
+                }
+                if v == 0 {
+                    // walked off the end
+                    break;
+                }
+                let is_good_row = {
+                    let mut is_good = true;
+                    for i in 1..=desired_dim - 1 {
+                        if output
+                            .eval(&mut |v| if v == 'x' { Some(x + i) } else { Some(y) })
+                            .unwrap()
+                            == 0
+                        {
+                            is_good = false;
+                            break;
+                        }
+                    }
+                    is_good
+                };
+                if is_good_row {
+                    let mut is_good_col = true;
+                    for i in 1..=desired_dim - 1 {
+                        if output
+                            .eval(&mut |v| if v == 'x' { Some(x) } else { Some(y + i) })
+                            .unwrap()
+                            == 0
+                        {
+                            is_good_col = false;
+                            break;
+                        }
+                    }
+                    if is_good_col {
+                        return Ok(10000 * x + y);
+                    } else {
+                        // TODO: optimise this, we're re-checking a load of stuff
+                        x += 1;
+                    }
+                } else {
+                    // Row is too short; get a new line.
+                    break;
+                }
+            }
+        }
     }
 }
 
@@ -830,7 +781,6 @@ mod tests {
     fn test_day_19() {
         let input = input(include_str!("../input.txt"));
         assert_eq!(part_1(&input).unwrap(), 226);
-        panic!("")
-        // assert_eq!(part_2(&input).unwrap(), 18509);
+        assert_eq!(part_2(&input).unwrap(), 7900946);
     }
 }
