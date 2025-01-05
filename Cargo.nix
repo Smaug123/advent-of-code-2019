@@ -16,6 +16,7 @@ args @ {
     "day_10/default"
     "day_11/default"
     "day_13/default"
+    "day_16/default"
     "day_19/default"
   ],
   rustPackages,
@@ -35,7 +36,7 @@ args @ {
   workspaceSrc,
   ignoreLockHash,
 }: let
-  nixifiedLockHash = "1afd6444ea20bab08a139fb721edfef441bbe7c13e6fb7e255543232356593de";
+  nixifiedLockHash = "2c62079535a1c0939e19c82a8a522acda584ca27c505613a01d397dd4c5ab20f";
   workspaceSrc =
     if args.workspaceSrc == null
     then ./.
@@ -85,6 +86,7 @@ in
       day_10 = rustPackages.unknown.day_10."0.1.0";
       day_11 = rustPackages.unknown.day_11."0.1.0";
       day_13 = rustPackages.unknown.day_13."0.1.0";
+      day_16 = rustPackages.unknown.day_16."0.1.0";
       day_19 = rustPackages.unknown.day_19."0.1.0";
     };
     "registry+https://github.com/rust-lang/crates.io-index".aho-corasick."1.1.3" = overridableMkRustCrate (profileName: rec {
@@ -474,6 +476,19 @@ in
       dependencies = {
         intcode = (rustPackages."unknown".intcode."0.1.0" {inherit profileName;}).out;
       };
+      devDependencies = {
+        criterion = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".criterion."0.4.0" {inherit profileName;}).out;
+      };
+    });
+
+    "unknown".day_16."0.1.0" = overridableMkRustCrate (profileName: rec {
+      name = "day_16";
+      version = "0.1.0";
+      registry = "unknown";
+      src = fetchCrateLocal workspaceSrc;
+      features = builtins.concatLists [
+        (lib.optional (rootFeatures' ? "day_16/no_real_inputs") "no_real_inputs")
+      ];
       devDependencies = {
         criterion = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".criterion."0.4.0" {inherit profileName;}).out;
       };
