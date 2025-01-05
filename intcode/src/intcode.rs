@@ -17,6 +17,8 @@ pub trait Num {
     fn one() -> Self;
     fn to_usize(self) -> Option<usize>;
     fn to_i32(self) -> Option<i32>;
+    fn if_less_then_else(self, other: Self, if_less: Self, if_not_less: Self) -> Self;
+    fn if_eq_then_else(self, other: Self, if_eq: Self, if_neq: Self) -> Self;
 }
 
 impl Num for i32 {
@@ -38,6 +40,22 @@ impl Num for i32 {
 
     fn to_i32(self) -> Option<i32> {
         Some(self)
+    }
+
+    fn if_less_then_else(self, other: i32, if_less: i32, if_not_less: i32) -> i32 {
+        if self < other {
+            if_less
+        } else {
+            if_not_less
+        }
+    }
+
+    fn if_eq_then_else(self, other: i32, if_eq: i32, if_neq: i32) -> i32 {
+        if self == other {
+            if_eq
+        } else {
+            if_neq
+        }
     }
 }
 
@@ -65,6 +83,14 @@ impl Num for i64 {
             Some(self as i32)
         }
     }
+    
+    fn if_less_then_else(self, other: Self, if_less: Self, if_not_less: Self) -> Self {
+        if self < other { if_less } else {if_not_less}
+    }
+    
+    fn if_eq_then_else(self, other: Self, if_eq: Self, if_neq: Self) -> Self {
+        if self == other { if_eq } else {if_neq}
+    }
 }
 
 impl Num for u64 {
@@ -85,6 +111,22 @@ impl Num for u64 {
             Some(self as i32)
         } else {
             None
+        }
+    }
+    
+    fn if_less_then_else(self, other: Self, if_less: Self, if_not_less: Self) -> Self {
+        if self < other {
+            if_less
+        } else {
+            if_not_less
+        }
+    }
+    
+    fn if_eq_then_else(self, other: Self, if_eq: Self, if_neq: Self) -> Self {
+        if self == other {
+            if_eq
+        } else {
+            if_neq
         }
     }
 }
@@ -108,6 +150,14 @@ impl Num for usize {
         } else {
             None
         }
+    }
+    
+    fn if_less_then_else(self, other: Self, if_less: Self, if_not_less: Self) -> Self {
+        if self < other { if_less } else { if_not_less }
+    }
+    
+    fn if_eq_then_else(self, other: Self, if_eq: Self, if_neq: Self) -> Self {
+        if self == other {if_eq} else {if_neq}
     }
 }
 
@@ -223,7 +273,7 @@ impl<T> MachineState<T> {
 
     fn consume_args_2(&self, opcode: usize) -> Result<(T, T), MachineExecutionError>
     where
-        T: Copy + Num,
+        T: Clone + Num,
     {
         if opcode >= 10000 {
             return Err(MachineExecutionError::BadParameterMode(opcode));
@@ -239,7 +289,7 @@ impl<T> MachineState<T> {
 
     fn consume_args_1(&self, opcode: usize) -> Result<T, MachineExecutionError>
     where
-        T: Copy + Num,
+        T: Clone + Num,
     {
         if opcode >= 1000 {
             return Err(MachineExecutionError::BadParameterMode(opcode));
@@ -256,7 +306,7 @@ impl<T> MachineState<T> {
         f: F,
     ) -> Result<StepResult<T>, MachineExecutionError>
     where
-        T: Copy + Num,
+        T: Clone + Num,
         F: Fn(T, T) -> T,
     {
         if opcode >= 100000 {
@@ -298,7 +348,7 @@ impl<T> MachineState<T> {
 
     pub fn one_step(&mut self) -> Result<StepResult<T>, MachineExecutionError>
     where
-        T: Add<T, Output = T> + Mul<T, Output = T> + Copy + std::cmp::Ord + Num,
+        T: Add<T, Output = T> + Mul<T, Output = T> + Clone + std::cmp::Ord + Num,
     {
         let opcode = self.read_mem_elt(self.pc);
         let opcode: usize = T::to_usize(opcode).ok_or(MachineExecutionError::OutOfBounds(
@@ -355,8 +405,8 @@ impl<T> MachineState<T> {
                 }
                 Ok(StepResult::Stepped)
             }
-            7 => self.transform_to_dest(opcode, |a, b| if a < b { T::one() } else { T::zero() }),
-            8 => self.transform_to_dest(opcode, |a, b| if a == b { T::one() } else { T::zero() }),
+            7 => self.transform_to_dest(opcode, |a, b| T::if_less_then_else(a, b, T::one(),  T::zero())),
+            8 => self.transform_to_dest(opcode, |a, b| T::if_eq_then_else(a, b, T::one(), T::zero())),
             9 => {
                 let arg = self.consume_args_1(opcode)?;
                 let increment = T::to_i32(arg).ok_or(MemoryAccessError::Overflow)?;
@@ -376,7 +426,7 @@ impl<T> MachineState<T> {
 
     pub fn execute_until_input(&mut self) -> Result<StepIoResult<T>, MachineExecutionError>
     where
-        T: Add<T, Output = T> + Mul<T, Output = T> + Copy + Ord + Num,
+        T: Add<T, Output = T> + Mul<T, Output = T> + Clone + Ord + Num,
     {
         loop {
             match self.one_step()? {
@@ -390,7 +440,7 @@ impl<T> MachineState<T> {
 
     pub fn execute_to_end<I>(&mut self, get_input: &mut I) -> Result<Vec<T>, MachineExecutionError>
     where
-        T: Add<T, Output = T> + Mul<T, Output = T> + Copy + Ord + Num,
+        T: Add<T, Output = T> + Mul<T, Output = T> + Clone + Ord + Num,
         I: Iterator<Item = T>,
     {
         let mut outputs = vec![];
@@ -459,7 +509,7 @@ impl<T> MachineState<T> {
 
     fn read_param(&self, i: usize, mode: ParameterMode) -> Result<T, MemoryAccessError>
     where
-        T: Copy + Num,
+        T: Clone + Num,
     {
         match mode {
             ParameterMode::Immediate => Ok(self.read_mem_elt(i)),
