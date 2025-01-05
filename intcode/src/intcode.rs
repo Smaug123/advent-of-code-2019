@@ -83,13 +83,21 @@ impl Num for i64 {
             Some(self as i32)
         }
     }
-    
+
     fn if_less_then_else(self, other: Self, if_less: Self, if_not_less: Self) -> Self {
-        if self < other { if_less } else {if_not_less}
+        if self < other {
+            if_less
+        } else {
+            if_not_less
+        }
     }
-    
+
     fn if_eq_then_else(self, other: Self, if_eq: Self, if_neq: Self) -> Self {
-        if self == other { if_eq } else {if_neq}
+        if self == other {
+            if_eq
+        } else {
+            if_neq
+        }
     }
 }
 
@@ -113,7 +121,7 @@ impl Num for u64 {
             None
         }
     }
-    
+
     fn if_less_then_else(self, other: Self, if_less: Self, if_not_less: Self) -> Self {
         if self < other {
             if_less
@@ -121,7 +129,7 @@ impl Num for u64 {
             if_not_less
         }
     }
-    
+
     fn if_eq_then_else(self, other: Self, if_eq: Self, if_neq: Self) -> Self {
         if self == other {
             if_eq
@@ -151,13 +159,21 @@ impl Num for usize {
             None
         }
     }
-    
+
     fn if_less_then_else(self, other: Self, if_less: Self, if_not_less: Self) -> Self {
-        if self < other { if_less } else { if_not_less }
+        if self < other {
+            if_less
+        } else {
+            if_not_less
+        }
     }
-    
+
     fn if_eq_then_else(self, other: Self, if_eq: Self, if_neq: Self) -> Self {
-        if self == other {if_eq} else {if_neq}
+        if self == other {
+            if_eq
+        } else {
+            if_neq
+        }
     }
 }
 
@@ -405,8 +421,12 @@ impl<T> MachineState<T> {
                 }
                 Ok(StepResult::Stepped)
             }
-            7 => self.transform_to_dest(opcode, |a, b| T::if_less_then_else(a, b, T::one(),  T::zero())),
-            8 => self.transform_to_dest(opcode, |a, b| T::if_eq_then_else(a, b, T::one(), T::zero())),
+            7 => self.transform_to_dest(opcode, |a, b| {
+                T::if_less_then_else(a, b, T::one(), T::zero())
+            }),
+            8 => {
+                self.transform_to_dest(opcode, |a, b| T::if_eq_then_else(a, b, T::one(), T::zero()))
+            }
             9 => {
                 let arg = self.consume_args_1(opcode)?;
                 let increment = T::to_i32(arg).ok_or(MemoryAccessError::Overflow)?;
