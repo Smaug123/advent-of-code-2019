@@ -4,7 +4,6 @@ pub mod day_19 {
     use crate::linked_list::List;
     use intcode::intcode::{MachineExecutionError, MachineState, Num};
     use std::{
-        collections::HashSet,
         fmt::Display,
         ops::{Add, Mul},
     };
@@ -250,19 +249,17 @@ pub mod day_19 {
                             _ => {}
                         }
                     }
-                    match (a, b) {
-                        (a, b) => Ast::IfLessThen(
+                    Ast::IfLessThen(
+                        Box::new(a.clone()),
+                        Box::new(b.clone()),
+                        Box::new(if_less.simplify(&conditions.prepend(Condition::LessThan(
                             Box::new(a.clone()),
                             Box::new(b.clone()),
-                            Box::new(if_less.simplify(&conditions.prepend(Condition::LessThan(
-                                Box::new(a.clone()),
-                                Box::new(b.clone()),
-                            )))),
-                            Box::new(if_geq.simplify(
-                                &conditions.prepend(Condition::NotLess(Box::new(a), Box::new(b))),
-                            )),
-                        ),
-                    }
+                        )))),
+                        Box::new(if_geq.simplify(
+                            &conditions.prepend(Condition::NotLess(Box::new(a), Box::new(b))),
+                        )),
+                    )
                 }
                 Ast::AddNode(ast, ast1) => {
                     match (ast.simplify(conditions), ast1.simplify(conditions)) {
@@ -349,7 +346,7 @@ pub mod day_19 {
                             Box::new(Ast::MulNode(Box::new(Ast::Constant(x)), ast)),
                             Box::new(Ast::MulNode(Box::new(Ast::Constant(x)), ast1)),
                         )
-                        .simplify(&conditions),
+                        .simplify(conditions),
                         (Ast::Variable(v), Ast::Variable(w)) => {
                             Ast::MulNode(Box::new(Ast::Variable(v)), Box::new(Ast::Variable(w)))
                         }
@@ -394,13 +391,7 @@ pub mod day_19 {
 
     impl PartialOrd for Ast {
         fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-            match self.eval(&mut |_| None) {
-                Err(v) => panic!("{v}"),
-                Ok(i) => match other.eval(&mut |_| None) {
-                    Err(v) => panic!("{v}"),
-                    Ok(j) => Some(i.cmp(&j)),
-                },
-            }
+            Some(self.cmp(other))
         }
     }
 
@@ -640,8 +631,7 @@ pub mod day_19 {
     }
 
     fn get_output(input: &[i64]) -> Result<Ast, MachineExecutionError> {
-        let mut machine =
-            MachineState::new_with_memory(&input.iter().copied().map(|x| Ast::Constant(x)));
+        let mut machine = MachineState::new_with_memory(&input.iter().copied().map(Ast::Constant));
         match machine.execute_until_input()? {
             intcode::intcode::StepIoResult::Terminated => {
                 panic!("terminated unexpectedly");
@@ -678,7 +668,7 @@ pub mod day_19 {
     }
 
     pub fn part_1(input: &[i64]) -> Result<u32, MachineExecutionError> {
-        let output = get_output(&input)?;
+        let output = get_output(input)?;
         let mut result = 0;
         for y in 0..=49 {
             for x in 0..=49 {
@@ -696,7 +686,7 @@ pub mod day_19 {
     }
 
     pub fn part_2(input: &[i64]) -> Result<i64, MachineExecutionError> {
-        let output = get_output(&input)?.simplify(
+        let output = get_output(input)?.simplify(
             &List::new()
                 .prepend(Condition::LessThan(
                     Box::new(Ast::Zero),

@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use day_19::day_19::{input, part_1, part_2};
+use day_19::day_19::{input, part_1};
 
 fn criterion_benchmark(c: &mut Criterion) {
     let input = input(include_str!("../input.txt"));
