@@ -12,6 +12,12 @@ struct Node<T> {
     next: Link<T>,
 }
 
+impl<T> Default for List<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T> List<T> {
     pub fn new() -> Self {
         List { head: None }
