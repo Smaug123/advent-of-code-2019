@@ -5,7 +5,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     let input = input(include_str!("../input.txt"));
     c.bench_function("day 16 part 1", |b| {
         b.iter(|| {
-            black_box(part_1(&input.iter().copied()));
+            black_box(part_1(&input));
         })
     });
     c.bench_function("day 16 part 2", |b| {
