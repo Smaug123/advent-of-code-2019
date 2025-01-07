@@ -12,13 +12,17 @@
     self,
     nixpkgs,
     cargo2nix,
+    rust-overlay,
     ...
   }:
     flake-utils.lib.eachDefaultSystem (
       system: let
         pkgs = import nixpkgs {
           inherit system;
-          overlays = [cargo2nix.overlays.default];
+          overlays = [
+            cargo2nix.overlays.default
+            (import rust-overlay)
+          ];
         };
 
         crates = builtins.attrNames (builtins.readDir self);
@@ -77,7 +81,9 @@
           default = pkgs.mkShell {
             packages = [
               pkgs.alejandra
-              pkgs.cargo
+              (pkgs.rust-bin.stable."${rustConfig.rustVersion}".default.override {
+                extensions = ["rust-src" "clippy" "rustfmt"];
+              })
               pkgs.cargo-insta
             ];
           };
